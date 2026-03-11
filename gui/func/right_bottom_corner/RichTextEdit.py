@@ -3,10 +3,11 @@ import re
 import base64
 import time
 
-from PySide6.QtWidgets import QTextEdit, QMenu, QMessageBox
+from PySide6.QtWidgets import QTextEdit, QMenu, QMessageBox, QFileDialog, QApplication
 from PySide6.QtGui import QImage, QClipboard, QContextMenuEvent, QAction, QTextCharFormat, QFont, QCursor, QIcon, \
     QKeySequence
-from PySide6.QtCore import QMimeData, QBuffer, QByteArray
+from PySide6.QtCore import QMimeData, QBuffer, QByteArray, QUrl
+from PySide6.QtPrintSupport import QPrinter
 from gui.func.utils import logger
 ''''
 富文本类设置
@@ -143,43 +144,67 @@ class RichTextEdit(QTextEdit):
                     }
                 """)
 
-        new_file = QAction(QIcon(":images/scissors.png"), "新建文件", self)
-        new_folder = QAction(QIcon(":images/question.png"), "新建文件夹", self)
+        # 复制功能
+        copy_action = QAction(QIcon(":images/document-copy.png"), "复制", self)
+        copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        copy_action.triggered.connect(self.copy)
+        # 只有在有选中内容时才启用复制
+        copy_action.setEnabled(self.textCursor().hasSelection())
 
-        rename = QAction(QIcon(":images/question.png"), "重命名", self)
-        rename.setShortcut(QKeySequence("F2"))
+        # 粘贴功能
+        paste_action = QAction(QIcon(":images/clipboard-paste-document-text.png"), "粘贴", self)
+        paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        paste_action.triggered.connect(self.paste)
+        # 检查剪贴板是否有内容
+        clipboard = QApplication.clipboard()
+        paste_action.setEnabled(clipboard.mimeData().hasText() or clipboard.mimeData().hasImage() or clipboard.mimeData().hasHtml())
 
-        delete = QAction(QIcon(":images/question.png"), "删除", self)
-        delete.setShortcut(QKeySequence.Delete)
+        # 导出PDF功能
+        export_pdf_action = QAction(QIcon(":images/question.png"), "导出PDF", self)
+        export_pdf_action.triggered.connect(self.export_to_pdf)
 
-        open_folder = QAction(QIcon(":images/question.png"), "打开所在目录", self)
-        refresh = QAction(QIcon(":images/question.png"), "刷新", self)
-
-        sub_menu = QMenu("导出为", self)
-        sub_menu.setStyleSheet(menu.styleSheet())  # 子菜单也继承样式
-        sub_menu.addAction(QAction(QIcon(":images/question.png"), "PDF", self))
-        sub_menu.addAction(QAction(QIcon(":images/question.png"), "Word", self))
-        sub_menu.addAction(QAction(QIcon(":images/question.png"), "Markdown", self))
-
-        menu.addAction(new_file)
-        menu.addAction(new_folder)
+        menu.addAction(copy_action)
+        menu.addAction(paste_action)
         menu.addSeparator()
-        menu.addAction(rename)
-        menu.addAction(delete)
-        menu.addSeparator()
-        menu.addAction(open_folder)
-        menu.addAction(refresh)
-        menu.addSeparator()
-        menu.addMenu(sub_menu)
+        menu.addAction(export_pdf_action)
 
-        action = menu.exec(QCursor.pos())
+        menu.exec(QCursor.pos())
 
-        if action == new_file:
-            QMessageBox.information(self, "提示", "新建文件")
-        elif action == rename:
-            QMessageBox.information(self, "提示", "重命名")
-        elif action == delete:
-            QMessageBox.warning(self, "提示", "删除")
+    def export_to_pdf(self):
+        """导出当前内容为PDF文件"""
+        # 获取默认文件名
+        default_filename = "导出文档.pdf"
+        if self.html_file_path:
+            default_filename = os.path.splitext(os.path.basename(self.html_file_path))[0] + ".pdf"
+
+        # 弹出保存文件对话框
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "导出PDF",
+            default_filename,
+            "PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            # 创建打印机对象，设置为PDF格式
+            printer = QPrinter(QPrinter.HighResolution)
+            printer.setOutputFormat(QPrinter.PdfFormat)
+            printer.setOutputFileName(file_path)
+
+            # 设置页面大小为A4
+            printer.setPageSize(QPrinter.A4)
+
+            # 打印文档到PDF
+            self.document().print_(printer)
+
+            logger.info(f"PDF导出成功: {file_path}")
+            QMessageBox.information(self, "导出成功", f"PDF文件已保存到:\n{file_path}")
+        except Exception as e:
+            logger.error(f"PDF导出失败: {str(e)}")
+            QMessageBox.critical(self, "导出失败", f"导出PDF时出错:\n{str(e)}")
 
     '''给字体加粗'''
     def toggle_bold(self):

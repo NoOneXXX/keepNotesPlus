@@ -1,6 +1,18 @@
 import os
 import sys
 
+# 辅助函数：获取资源文件路径（兼容开发环境和 Nuitka 打包环境）
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，兼容 Nuitka 打包后的环境"""
+    # 检查是否在 Nuitka 打包环境中
+    if hasattr(sys, 'frozen') or getattr(sys, '_MEIPASS', None):
+        # Nuitka 打包后的环境，使用可执行文件所在目录
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # 开发环境，使用当前文件所在目录
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
+
 from PySide6.QtWebEngineCore import QWebEngineSettings
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -28,7 +40,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QHBoxLayout,
-    QSizePolicy, QFrame, QTreeWidgetItem, QTableWidgetItem, QVBoxLayout
+    QSizePolicy, QFrame, QTreeWidgetItem, QTableWidgetItem, QVBoxLayout, QStackedWidget
 )
 
 # Import the generated UI class from ui_main_window.py
@@ -36,6 +48,7 @@ from gui.ui.ui_main_window import Ui_MainWindow
 from gui.func.left.XPNotebookTree import XPNotebookTree
 from gui.func.right_top_corner.XPTreeRightTop import XPTreeRightTop
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
+from gui.func.right_bottom_corner.MarkdownEditor import MarkdownEditor
 from gui.func.top_menu.file_action import FileActions
 from gui.func.singel_pkg.single_manager import sm
 from gui.func.utils.constants import FONT_SIZES
@@ -113,10 +126,20 @@ class MainWindow(QMainWindow):
         self.rich_text_editor.textChanged.connect(self.auto_save_note)
         self.rich_text_editor.selectionChanged.connect(self.update_format)
 
-        # Add editor to noteContentTable
-        self.ui.noteContentTable.setCellWidget(0, 0, self.rich_text_editor)
+        # 预创建 Markdown 编辑器（避免第一次打开时闪烁）
+        self.markdown_editor = MarkdownEditor(self)
+        self.markdown_editor.hide()
+
+        # 使用堆叠窗口管理多个编辑器
+        self.editor_stack = QStackedWidget()
+        self.editor_stack.addWidget(self.rich_text_editor)  # 索引 0
+        self.editor_stack.addWidget(self.markdown_editor)   # 索引 1
+
+        # Add editor stack to noteContentTable
+        self.ui.noteContentTable.setCellWidget(0, 0, self.editor_stack)
         # default editor is rich text editor
         self.current_editor = self.rich_text_editor  # 默认
+        self.current_editor_type = "richtext"  # 当前编辑器类型
         # 方法绑定 渲染pdf的时候转换引擎
         sm.send_pdf_path_2_main_signal.connect(self.replace_rictEditor_2_QWebEngineView)
         # 当pdf那边转换的了渲染引擎后 要重新换回来
@@ -141,21 +164,43 @@ class MainWindow(QMainWindow):
 
         # 初始化功能类
         self.file_actions = FileActions(self)  # 传入 self 以便弹窗等能绑定主窗口
+        
+        # File 菜单样式 - 现代优雅风格
         self.ui.menuFile.setStyleSheet("""
             QMenu {
                 background-color: #ffffff;
-                color: #000000;
-                border: 1px solid #ccc;
-                border-radius: 8px;  /* 设置圆角半径 */
-                padding: 4px;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                padding: 6px;
+                font-size: 14px;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
             }
             QMenu::item {
-                padding: 6px 24px;
-                border-radius: 4px;  /* 给 item 也加圆角，避免选中时遮住菜单圆角 */
+                padding: 8px 32px 8px 12px;
+                border-radius: 6px;
+                color: #334155;
+                margin: 2px 4px;
             }
             QMenu::item:selected {
-                background-color: #cce8ff;  /* 浅蓝色 */
-                border-radius: 4px;
+                background-color: #EFF6FF;
+                color: #2563EB;
+            }
+            QMenu::item:disabled {
+                color: #94A3B8;
+            }
+            QMenu::icon {
+                padding-left: 8px;
+                margin-left: 0px;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #E2E8F0;
+                margin: 6px 12px;
+            }
+            QMenu::indicator {
+                width: 16px;
+                height: 16px;
+                margin-left: 8px;
             }
         """)
 
@@ -165,31 +210,39 @@ class MainWindow(QMainWindow):
         self.ui.menuFile.addAction(self.file_actions.open_notebook_action())
         # 打开最近的笔记本
         self.ui.menuFile.addAction(self.file_actions.open_recent_notebook_action())
-
+        
+        # 分隔线
+        self.ui.menuFile.addSeparator()
 
         save_file_action = QAction(
-            QIcon(":/images/disk.png"), "Save", self
+            QIcon(":/images/disk.png"), "保存", self
         )
-        save_file_action.setStatusTip("Save current page")
+        save_file_action.setStatusTip("保存当前页面")
+        save_file_action.setShortcut(QKeySequence.StandardKey.Save)
         save_file_action.triggered.connect(self.file_save)
-
+        self.ui.menuFile.addAction(save_file_action)
 
         saveas_file_action = QAction(
             QIcon(":/images/disk--pencil.png"),
-            "Save As...",
+            "另存为...",
             self,
         )
-        saveas_file_action.setStatusTip("Save current page to specified file")
+        saveas_file_action.setStatusTip("保存到指定文件")
         saveas_file_action.triggered.connect(self.file_saveas)
-
+        self.ui.menuFile.addAction(saveas_file_action)
+        
+        # 分隔线
+        self.ui.menuFile.addSeparator()
 
         print_action = QAction(
             QIcon(":/images/printer.png"),
-            "Print...",
+            "打印...",
             self,
         )
-        print_action.setStatusTip("Print current page")
+        print_action.setStatusTip("打印当前页面")
+        print_action.setShortcut(QKeySequence.StandardKey.Print)
         print_action.triggered.connect(self.file_print)
+        self.ui.menuFile.addAction(print_action)
 
 
         edit_toolbar = QToolBar("Edit")
@@ -644,6 +697,8 @@ class MainWindow(QMainWindow):
         # 先清空 verticalLayout 中的旧组件
         self.clear_layout(self.ui.verticalLayout)
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
+        # 连接 Markdown 编辑器信号
+        tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
 
         self.ui.verticalLayout.addWidget(tree_widget)
 
@@ -681,11 +736,16 @@ class MainWindow(QMainWindow):
             self.clear_layout(self.layout)
             tree = XPTreeRightTop(path_,rich_text_edit=self.rich_text_editor)
             tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  #  设置扩展策略
+            # 连接 Markdown 编辑器信号
+            tree.open_markdown_editor.connect(self.open_markdown_editor)
             self.layout.addWidget(tree)
 
     # 动态的加载pdf
     @Slot(str)
     def replace_rictEditor_2_QWebEngineView(self, file_path):
+        # 先切换回富文本编辑器（隐藏堆叠窗口）
+        self.change_2_rich_text_editor()
+        
         #获取后缀
         webview = None
         ext = os.path.splitext(file_path)[1].lower()
@@ -697,37 +757,71 @@ class MainWindow(QMainWindow):
             docx_ = read_word(file_path)
             webview = docx_.render_word_to_webview()
 
-        # 替换 UI 中组件
-        current_widget = self.ui.noteContentTable.cellWidget(0, 0)
-        if current_widget:
-            current_widget.setParent(None)
+        # 替换 UI 中组件 - 需要替换堆叠窗口本身
+        self.ui.noteContentTable.removeCellWidget(0, 0)
         self.ui.noteContentTable.setCellWidget(0, 0, webview)
         self.ui.noteContentTable.setRowHeight(0, self.ui.noteContentTable.height())
         self.ui.noteContentTable.setColumnWidth(0, self.ui.noteContentTable.width())
         self.current_editor = webview
+        self.current_editor_type = "webview"
 
     @Slot()
     def change_2_rich_text_editor(self):
-        if isinstance(self.current_editor, QWebEngineView):
-            # 替换 UI 中组件
-            current_widget = self.ui.noteContentTable.cellWidget(0, 0)
-            if current_widget:
-                current_widget.setParent(None)
-            # 富文本框
-            self.rich_text_editor = RichTextEdit(self)
-            # 监听文件改动 只要文件改动就进行保存
-            self.rich_text_editor.textChanged.connect(self.auto_save_note)
-            self.rich_text_editor.selectionChanged.connect(self.update_format)
-
-            # Add editor to noteContentTable
-            self.ui.noteContentTable.setCellWidget(0, 0, self.rich_text_editor)
-            # default editor is rich text editor
-            self.current_editor = self.rich_text_editor  # 默认
+        # 如果当前是 Markdown 编辑器，先保存
+        if self.current_editor_type == "markdown":
+            self.markdown_editor.save_file()
+        
+        # 切换到富文本编辑器（只是切换堆叠窗口索引，无闪烁）
+        self.editor_stack.setCurrentIndex(0)
+        self.current_editor = self.rich_text_editor
+        self.current_editor_type = "richtext"
+        
         # 回传这个组件给file_load 用来更新他们的组件
         sm.received_rich_text_signal.emit(self.rich_text_editor)
 
         # 回传这个参数给left 左侧的树点击事件
         sm.received_rich_text_2_left_click_signal.emit(self.rich_text_editor)
+
+    @Slot(str)
+    def open_markdown_editor(self, file_path):
+        """打开 Markdown 编辑器"""
+        # 获取 Markdown 文件路径
+        md_path = os.path.join(file_path, "document.md")
+        
+        # 如果已经在 Markdown 编辑器，直接加载文件
+        if self.current_editor_type == "markdown":
+            self.markdown_editor.set_file_path(md_path)
+            if os.path.exists(md_path):
+                self.markdown_editor.load_file(md_path)
+            self.path = md_path
+            self.update_title()
+            return
+        
+        # 切换到 Markdown 编辑器（只是切换堆叠窗口索引，无闪烁）
+        self.markdown_editor.set_file_path(md_path)
+        if os.path.exists(md_path):
+            self.markdown_editor.load_file(md_path)
+        
+        # 连接内容变化信号（使用标志位避免重复连接和断开警告）
+        if not hasattr(self, '_markdown_signal_connected') or not self._markdown_signal_connected:
+            self.markdown_editor.content_changed.connect(self.auto_save_markdown)
+            self._markdown_signal_connected = True
+        
+        # 切换堆叠窗口索引
+        self.editor_stack.setCurrentIndex(1)
+        self.current_editor = self.markdown_editor
+        self.current_editor_type = "markdown"
+        
+        # 更新标题
+        self.path = md_path
+        self.update_title()
+    
+    def auto_save_markdown(self):
+        """自动保存 Markdown 文件"""
+        if hasattr(self, 'markdown_editor') and self.markdown_editor:
+            # 使用编辑器当前的文件路径保存
+            self.markdown_editor.save_file()
+            self.status.showMessage("已自动保存", 2000)
 
 
 
@@ -737,8 +831,12 @@ if __name__ == "__main__":
         app.setApplicationName("Megasolid Idiom")
         qInstallMessageHandler(qt_message_handler)
         # 增加全局样式 虽然不是很成功 先放着 后面慢慢的调试
-        with open("gui/ui/qss/light.qss", "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
+        qss_path = get_resource_path("gui/ui/qss/light.qss")
+        if os.path.exists(qss_path):
+            with open(qss_path, "r", encoding="utf-8") as f:
+                app.setStyleSheet(f.read())
+        else:
+            print(f"警告: 找不到样式文件 {qss_path}")
 
         window = MainWindow()
         logger.info(f'已经启动成功======')

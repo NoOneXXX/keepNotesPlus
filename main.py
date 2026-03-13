@@ -50,6 +50,7 @@ from gui.func.right_top_corner.XPTreeRightTop import XPTreeRightTop
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
 from gui.func.right_bottom_corner.MarkdownEditor import MarkdownEditor
 from gui.func.top_menu.file_action import FileActions
+from gui.func.settings.settings_page import SettingsDialog
 from gui.func.singel_pkg.single_manager import sm
 from gui.func.utils.constants import FONT_SIZES
 try:
@@ -243,6 +244,18 @@ class MainWindow(QMainWindow):
         print_action.setShortcut(QKeySequence.StandardKey.Print)
         print_action.triggered.connect(self.file_print)
         self.ui.menuFile.addAction(print_action)
+
+        # 分隔线
+        self.ui.menuFile.addSeparator()
+        
+        # 设置按钮
+        settings_action = QAction(
+            "⚙ 设置",
+            self,
+        )
+        settings_action.setStatusTip("打开设置页面")
+        settings_action.triggered.connect(self.open_settings)
+        self.ui.menuFile.addAction(settings_action)
 
 
         edit_toolbar = QToolBar("Edit")
@@ -822,6 +835,18 @@ class MainWindow(QMainWindow):
             # 使用编辑器当前的文件路径保存
             self.markdown_editor.save_file()
             self.status.showMessage("已自动保存", 2000)
+
+    def open_settings(self):
+        """打开设置对话框"""
+        # 获取当前笔记本路径
+        notebook_path = None
+        if hasattr(self, 'file_actions') and self.file_actions:
+            if hasattr(self.file_actions, 'path_') and self.file_actions.path_:
+                notebook_path = self.file_actions.path_
+        
+        # 创建并显示设置对话框
+        dialog = SettingsDialog(notebook_path, self)
+        dialog.exec()
 
 
 

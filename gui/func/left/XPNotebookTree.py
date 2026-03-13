@@ -96,6 +96,8 @@ class XPNotebookTree(QWidget):
         root = QTreeWidgetItem(self.tree)
         notebook_name = os.path.basename(self.custom_path)
         root.setText(0, notebook_name)
+        # 将路径存储到 UserRole+3 用于委托绘制灰色显示
+        root.setData(0, Qt.UserRole + 3, f"  {self.custom_path}(🙋如果你看到了这句话，那就说明这里有一句话！！！🤪🤪🤪)")
         root.setIcon(0, self.folder_closed_icon)
         font = QFont("Segoe UI", 12)
         font.setBold(True)
@@ -115,7 +117,7 @@ class XPNotebookTree(QWidget):
         self.tree.expandAll()
         # 左键点击事件 点击的时候就展开 不是只有点击前面的加号减号才展开
         self.tree.itemClicked.connect(self.on_item_clicked)
-        self.tree.setItemDelegate(CustomTreeItemDelegate())
+        self.tree.setItemDelegate(CustomTreeItemDelegate(self.tree))
         self.tree.itemChanged.connect(self.on_item_renamed)
 
     def populate_tree(self, parent_item, path):
@@ -991,6 +993,9 @@ class XPNotebookTree(QWidget):
         if os.path.exists(file_path):
             self.create_file_item(item, index + 1)
             return
+        
+        created_folder = False
+        
         try:
             # 将它的父类改成has_childer true 这个可以在创建的时候是否有子集
             editor = JsonEditor()
@@ -1003,7 +1008,9 @@ class XPNotebookTree(QWidget):
             meta_path = os.path.join(dir_path, ".metadata.json")
             editor.writeByData(meta_path,editor_data)
 
-            os.makedirs(file_path, exist_ok=True)
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
             create_metadata_file_under_dir(file_path, content_type = 'file', order_file_num = max_order_num_by_child_dir)
             note_path = os.path.join(file_path, ".note.html")
             with open(note_path, "w", encoding="utf-8") as f:
@@ -1014,6 +1021,7 @@ class XPNotebookTree(QWidget):
             new_item.setIcon(0, self.file_icon)
             new_item.setData(0, Qt.UserRole, file_path)
             new_item.setData(0, Qt.UserRole + 1, True)  #  标记“刚创建”
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
             new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
             # new_item.addChild(QTreeWidgetItem())
 
@@ -1026,6 +1034,13 @@ class XPNotebookTree(QWidget):
             self.tree.editItem(new_item, 0)
 
         except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                except:
+                    pass
             QMessageBox.critical(self, "创建失败", f"无法创建文件:\n{e}")
 
     '''
@@ -1039,6 +1054,13 @@ class XPNotebookTree(QWidget):
         if os.path.exists(file_path):
             self.create_markdown_file(item, index + 1)
             return
+        
+        # 先创建临时文件夹名，避免创建失败后留下残留
+        temp_file_path = file_path
+        created_folder = False
+        created_metadata = False
+        created_md = False
+        
         try:
             # 将它的父类改成 has_children true
             editor = JsonEditor()
@@ -1051,14 +1073,18 @@ class XPNotebookTree(QWidget):
             meta_path = os.path.join(dir_path, ".metadata.json")
             editor.writeByData(meta_path, editor_data)
 
-            os.makedirs(file_path, exist_ok=True)
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
             # 创建 Markdown 类型的 metadata
             create_metadata_file_under_dir(file_path, content_type='markdown', order_file_num=max_order_num_by_child_dir)
+            created_metadata = True
             
             # 创建空的 Markdown 文件
             md_path = os.path.join(file_path, "document.md")
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(f"# {name}\n\n")
+            created_md = True
 
             new_item = QTreeWidgetItem()
             new_item.setText(0, name)
@@ -1067,6 +1093,7 @@ class XPNotebookTree(QWidget):
             new_item.setIcon(0, markdown_icon)
             new_item.setData(0, Qt.UserRole, file_path)
             new_item.setData(0, Qt.UserRole + 1, True)  # 标记"刚创建"
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
             new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
 
             item.addChild(new_item)
@@ -1081,6 +1108,13 @@ class XPNotebookTree(QWidget):
             self.open_markdown_editor.emit(file_path)
 
         except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(temp_file_path):
+                try:
+                    shutil.rmtree(temp_file_path)
+                except:
+                    pass
             QMessageBox.critical(self, "创建失败", f"无法创建 Markdown 文件:\n{e}")
 
     def change_tag(data):
@@ -1142,6 +1176,8 @@ class XPNotebookTree(QWidget):
             self.create_dir_action(item, index_ + 1)
             return
 
+        created_folder = False
+        
         try:
             # 将它的父类改成has_childer true 这个可以在创建的时候是否有子集
             editor = JsonEditor()
@@ -1154,7 +1190,9 @@ class XPNotebookTree(QWidget):
             meta_path = os.path.join(dir_path, ".metadata.json")
             editor.writeByData(meta_path, editor_data)
 
-            os.makedirs(file_path, exist_ok=True)
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
             create_metadata_dir_under_dir(file_path,content_type = 'dir', order_file_num = max_order_num_by_child_dir)
 
             # 不刷新，而是手动插入新节点
@@ -1163,6 +1201,7 @@ class XPNotebookTree(QWidget):
             new_item.setIcon(0, self.folder_closed_icon)
             new_item.setData(0, Qt.UserRole, file_path)
             new_item.setData(0, Qt.UserRole + 1, True)  # 标记刚创建
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
             new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
             # new_item.addChild(QTreeWidgetItem())  # 懒加载标记
 
@@ -1175,6 +1214,13 @@ class XPNotebookTree(QWidget):
             self.tree.editItem(new_item, 0)
 
         except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                except:
+                    pass
             QMessageBox.critical(self, "创建失败", f"无法创建文件夹:\n{e}")
 
 
@@ -1265,6 +1311,8 @@ class XPNotebookTree(QWidget):
         if file_path:
             # 获取路径
             base_dir_path = item.data(0, Qt.UserRole)
+            created_folder = False
+            
             try:
                 # 将它的父类改成has_childer true 这个可以在创建的时候是否有子集
                 editor = JsonEditor()
@@ -1282,7 +1330,15 @@ class XPNotebookTree(QWidget):
                 # 获取文件名 并且创建这个文件夹
                 file_name = os.path.basename(file_path)
                 target_file_path = os.path.join(base_dir_path, file_name)
-                os.makedirs(target_file_path, exist_ok=True)
+                
+                # 检查是否已存在同名文件夹
+                if os.path.exists(target_file_path):
+                    QMessageBox.warning(self, "创建失败", f"已存在同名文件:\n{file_name}")
+                    return
+                    
+                os.makedirs(target_file_path, exist_ok=False)
+                created_folder = True
+                
                 # # 扩展名（不含点） pdf
                 ext_types = Path(file_path).suffix.lstrip('.')
                 # file_path.suffix 含有标点 .pdf
@@ -1296,6 +1352,7 @@ class XPNotebookTree(QWidget):
                 # 这里修改文件路径为新的文件路径这样第一次读取的时候才不会报错
                 new_item.setData(0, Qt.UserRole, target_file_path)
                 new_item.setData(0, Qt.UserRole + 1, True)  # 标记“刚创建”
+                new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
 
                 item.addChild(new_item)
                 item.setExpanded(True)
@@ -1305,6 +1362,13 @@ class XPNotebookTree(QWidget):
                 self.tree.editItem(new_item, 0)
 
             except Exception as e:
+                # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+                import shutil
+                if created_folder and os.path.exists(target_file_path):
+                    try:
+                        shutil.rmtree(target_file_path)
+                    except:
+                        pass
                 QMessageBox.critical(self, "创建失败", f"无法创建文件:\n{e}")
 
         else:

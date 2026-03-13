@@ -5,6 +5,11 @@ import time
 import json
 import markdown
 
+from pygments import highlight
+from pygments.lexers import get_lexer_by_name, guess_lexer
+from pygments.formatters import HtmlFormatter
+from pygments.util import ClassNotFound
+
 from PySide6.QtWidgets import (
     QTextEdit, QMenu, QMessageBox, QFileDialog, QApplication,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QSplitter,
@@ -19,6 +24,166 @@ from PySide6.QtCore import QMimeData, QBuffer, QByteArray, QUrl, Qt, Signal, Slo
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEnginePage
 from gui.func.utils import logger
+
+
+# ========================
+# 自定义 Pygments 样式
+# DBeaver 风格 SQL 配色
+# XShell 风格 Shell 配色
+# ========================
+class DBeaverSQLStyle(HtmlFormatter):
+    """DBeaver 风格的 SQL 语法高亮样式"""
+    
+    def __init__(self, **options):
+        super().__init__(**options)
+        self.style = 'default'
+    
+    def get_style_defs(self, cssclass=''):
+        return f'''
+        {cssclass} .hll {{ background-color: #49483e }}
+        {cssclass} {{ background: #1E1E1E; color: #D4D4D4 }}
+        {cssclass} .c {{ color: #6A9955; font-style: italic }} /* Comment */
+        {cssclass} .err {{ color: #F44747 }} /* Error */
+        {cssclass} .k {{ color: #569CD6; font-weight: bold }} /* Keyword */
+        {cssclass} .o {{ color: #D4D4D4 }} /* Operator */
+        {cssclass} .cm {{ color: #6A9955; font-style: italic }} /* Comment.Multiline */
+        {cssclass} .cp {{ color: #C586C0 }} /* Comment.Preproc */
+        {cssclass} .c1 {{ color: #6A9955; font-style: italic }} /* Comment.Single */
+        {cssclass} .cs {{ color: #6A9955; font-style: italic }} /* Comment.Special */
+        {cssclass} .gd {{ color: #F44747 }} /* Generic.Deleted */
+        {cssclass} .ge {{ font-style: italic }} /* Generic.Emph */
+        {cssclass} .gr {{ color: #F44747 }} /* Generic.Error */
+        {cssclass} .gh {{ color: #FFFFFF }} /* Generic.Heading */
+        {cssclass} .gi {{ color: #4EC9B0 }} /* Generic.Inserted */
+        {cssclass} .go {{ color: #D4D4D4 }} /* Generic.Output */
+        {cssclass} .gp {{ color: #D4D4D4 }} /* Generic.Prompt */
+        {cssclass} .gs {{ font-weight: bold }} /* Generic.Strong */
+        {cssclass} .gu {{ color: #FFFFFF }} /* Generic.Subheading */
+        {cssclass} .gt {{ color: #F44747 }} /* Generic.Traceback */
+        {cssclass} .kc {{ color: #569CD6; font-weight: bold }} /* Keyword.Constant */
+        {cssclass} .kd {{ color: #569CD6; font-weight: bold }} /* Keyword.Declaration */
+        {cssclass} .kn {{ color: #C586C0 }} /* Keyword.Namespace */
+        {cssclass} .kp {{ color: #569CD6 }} /* Keyword.Pseudo */
+        {cssclass} .kr {{ color: #569CD6; font-weight: bold }} /* Keyword.Reserved */
+        {cssclass} .kt {{ color: #4EC9B0 }} /* Keyword.Type */
+        {cssclass} .ld {{ color: #CE9178 }} /* Literal.Date */
+        {cssclass} .m {{ color: #B5CEA8 }} /* Literal.Number */
+        {cssclass} .s {{ color: #CE9178 }} /* Literal.String */
+        {cssclass} .na {{ color: #9CDCFE }} /* Name.Attribute */
+        {cssclass} .nb {{ color: #4EC9B0 }} /* Name.Builtin */
+        {cssclass} .nc {{ color: #4EC9B0 }} /* Name.Class */
+        {cssclass} .no {{ color: #569CD6 }} /* Name.Constant */
+        {cssclass} .nd {{ color: #DCDCAA }} /* Name.Decorator */
+        {cssclass} .ni {{ color: #D4D4D4 }} /* Name.Entity */
+        {cssclass} .ne {{ color: #4EC9B0 }} /* Name.Exception */
+        {cssclass} .nf {{ color: #DCDCAA }} /* Name.Function */
+        {cssclass} .nl {{ color: #9CDCFE }} /* Name.Label */
+        {cssclass} .nn {{ color: #4EC9B0 }} /* Name.Namespace */
+        {cssclass} .nt {{ color: #569CD6 }} /* Name.Tag */
+        {cssclass} .nv {{ color: #9CDCFE }} /* Name.Variable */
+        {cssclass} .ow {{ color: #C586C0 }} /* Operator.Word */
+        {cssclass} .w {{ color: #D4D4D4 }} /* Text.Whitespace */
+        {cssclass} .mb {{ color: #B5CEA8 }} /* Literal.Number.Bin */
+        {cssclass} .mf {{ color: #B5CEA8 }} /* Literal.Number.Float */
+        {cssclass} .mh {{ color: #B5CEA8 }} /* Literal.Number.Hex */
+        {cssclass} .mi {{ color: #B5CEA8 }} /* Literal.Number.Integer */
+        {cssclass} .mo {{ color: #B5CEA8 }} /* Literal.Number.Oct */
+        {cssclass} .sb {{ color: #CE9178 }} /* Literal.String.Backtick */
+        {cssclass} .sc {{ color: #CE9178 }} /* Literal.String.Char */
+        {cssclass} .sd {{ color: #6A9955 }} /* Literal.String.Doc */
+        {cssclass} .s2 {{ color: #CE9178 }} /* Literal.String.Double */
+        {cssclass} .se {{ color: #D7BA7D }} /* Literal.String.Escape */
+        {cssclass} .sh {{ color: #CE9178 }} /* Literal.String.Heredoc */
+        {cssclass} .si {{ color: #CE9178 }} /* Literal.String.Interpol */
+        {cssclass} .sx {{ color: #CE9178 }} /* Literal.String.Other */
+        {cssclass} .sr {{ color: #D16969 }} /* Literal.String.Regex */
+        {cssclass} .s1 {{ color: #CE9178 }} /* Literal.String.Single */
+        {cssclass} .ss {{ color: #CE9178 }} /* Literal.String.Symbol */
+        {cssclass} .bp {{ color: #4EC9B0 }} /* Name.Builtin.Pseudo */
+        {cssclass} .vc {{ color: #9CDCFE }} /* Name.Variable.Class */
+        {cssclass} .vg {{ color: #9CDCFE }} /* Name.Variable.Global */
+        {cssclass} .vi {{ color: #9CDCFE }} /* Name.Variable.Instance */
+        {cssclass} .il {{ color: #B5CEA8 }} /* Literal.Number.Integer.Long */
+        '''
+
+
+class XShellStyle(HtmlFormatter):
+    """XShell 风格的 Shell/Bash 语法高亮样式"""
+    
+    def __init__(self, **options):
+        super().__init__(**options)
+        self.style = 'default'
+    
+    def get_style_defs(self, cssclass=''):
+        return f'''
+        {cssclass} .hll {{ background-color: #49483e }}
+        {cssclass} {{ background: #0C0C0C; color: #CCCCCC }}
+        {cssclass} .c {{ color: #6A9955; font-style: italic }} /* Comment */
+        {cssclass} .err {{ color: #F44747 }} /* Error */
+        {cssclass} .k {{ color: #569CD6; font-weight: bold }} /* Keyword */
+        {cssclass} .o {{ color: #D4D4D4 }} /* Operator */
+        {cssclass} .cm {{ color: #6A9955; font-style: italic }} /* Comment.Multiline */
+        {cssclass} .cp {{ color: #C586C0 }} /* Comment.Preproc */
+        {cssclass} .c1 {{ color: #6A9955; font-style: italic }} /* Comment.Single */
+        {cssclass} .cs {{ color: #6A9955; font-style: italic }} /* Comment.Special */
+        {cssclass} .gd {{ color: #F44747 }} /* Generic.Deleted */
+        {cssclass} .ge {{ font-style: italic }} /* Generic.Emph */
+        {cssclass} .gr {{ color: #F44747 }} /* Generic.Error */
+        {cssclass} .gh {{ color: #569CD6 }} /* Generic.Heading */
+        {cssclass} .gi {{ color: #4EC9B0 }} /* Generic.Inserted */
+        {cssclass} .go {{ color: #CCCCCC }} /* Generic.Output */
+        {cssclass} .gp {{ color: #CCCCCC }} /* Generic.Prompt */
+        {cssclass} .gs {{ font-weight: bold }} /* Generic.Strong */
+        {cssclass} .gu {{ color: #569CD6 }} /* Generic.Subheading */
+        {cssclass} .gt {{ color: #F44747 }} /* Generic.Traceback */
+        {cssclass} .kc {{ color: #569CD6; font-weight: bold }} /* Keyword.Constant */
+        {cssclass} .kd {{ color: #569CD6; font-weight: bold }} /* Keyword.Declaration */
+        {cssclass} .kn {{ color: #C586C0 }} /* Keyword.Namespace */
+        {cssclass} .kp {{ color: #569CD6 }} /* Keyword.Pseudo */
+        {cssclass} .kr {{ color: #569CD6; font-weight: bold }} /* Keyword.Reserved */
+        {cssclass} .kt {{ color: #4EC9B0 }} /* Keyword.Type */
+        {cssclass} .ld {{ color: #CE9178 }} /* Literal.Date */
+        {cssclass} .m {{ color: #B5CEA8 }} /* Literal.Number */
+        {cssclass} .s {{ color: #CE9178 }} /* Literal.String */
+        {cssclass} .na {{ color: #9CDCFE }} /* Name.Attribute */
+        {cssclass} .nb {{ color: #4EC9B0 }} /* Name.Builtin */
+        {cssclass} .nc {{ color: #4EC9B0 }} /* Name.Class */
+        {cssclass} .no {{ color: #569CD6 }} /* Name.Constant */
+        {cssclass} .nd {{ color: #DCDCAA }} /* Name.Decorator */
+        {cssclass} .ni {{ color: #D4D4D4 }} /* Name.Entity */
+        {cssclass} .ne {{ color: #4EC9B0 }} /* Name.Exception */
+        {cssclass} .nf {{ color: #DCDCAA }} /* Name.Function */
+        {cssclass} .nl {{ color: #9CDCFE }} /* Name.Label */
+        {cssclass} .nn {{ color: #4EC9B0 }} /* Name.Namespace */
+        {cssclass} .nt {{ color: #569CD6 }} /* Name.Tag */
+        {cssclass} .nv {{ color: #9CDCFE; font-weight: bold }} /* Name.Variable - 变量高亮 */
+        {cssclass} .ow {{ color: #C586C0 }} /* Operator.Word */
+        {cssclass} .w {{ color: #D4D4D4 }} /* Text.Whitespace */
+        {cssclass} .mb {{ color: #B5CEA8 }} /* Literal.Number.Bin */
+        {cssclass} .mf {{ color: #B5CEA8 }} /* Literal.Number.Float */
+        {cssclass} .mh {{ color: #B5CEA8 }} /* Literal.Number.Hex */
+        {cssclass} .mi {{ color: #B5CEA8 }} /* Literal.Number.Integer */
+        {cssclass} .mo {{ color: #B5CEA8 }} /* Literal.Number.Oct */
+        {cssclass} .sb {{ color: #CE9178 }} /* Literal.String.Backtick */
+        {cssclass} .sc {{ color: #CE9178 }} /* Literal.String.Char */
+        {cssclass} .sd {{ color: #6A9955 }} /* Literal.String.Doc */
+        {cssclass} .s2 {{ color: #CE9178 }} /* Literal.String.Double */
+        {cssclass} .se {{ color: #D7BA7D }} /* Literal.String.Escape */
+        {cssclass} .sh {{ color: #CE9178 }} /* Literal.String.Heredoc */
+        {cssclass} .si {{ color: #CE9178 }} /* Literal.String.Interpol */
+        {cssclass} .sx {{ color: #CE9178 }} /* Literal.String.Other */
+        {cssclass} .sr {{ color: #D16969 }} /* Literal.String.Regex */
+        {cssclass} .s1 {{ color: #CE9178 }} /* Literal.String.Single */
+        {cssclass} .ss {{ color: #CE9178 }} /* Literal.String.Symbol */
+        {cssclass} .bp {{ color: #4EC9B0 }} /* Name.Builtin.Pseudo */
+        {cssclass} .vc {{ color: #9CDCFE }} /* Name.Variable.Class */
+        {cssclass} .vg {{ color: #9CDCFE }} /* Name.Variable.Global */
+        {cssclass} .vi {{ color: #9CDCFE }} /* Name.Variable.Instance */
+        {cssclass} .il {{ color: #B5CEA8 }} /* Literal.Number.Integer.Long */
+        /* Shell 特殊样式 */
+        {cssclass} .nb {{ color: #4EC9B0; font-weight: bold }} /* 内置命令 */
+        {cssclass} .gp {{ color: #6A9955 }} /* 提示符 */
+        '''
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
@@ -614,12 +779,62 @@ class MarkdownEditor(QWidget):
             """
             self.split_preview.page().runJavaScript(js_code)
     
+    def _highlight_code_block(self, code, lang):
+        """使用 Pygments 高亮代码块"""
+        try:
+            # 根据语言选择不同的样式
+            if lang and lang.lower() in ['sql', 'mysql', 'postgresql', 'sqlite', 'plsql', 'tsql']:
+                lexer = get_lexer_by_name('sql', stripall=True)
+                formatter = DBeaverSQLStyle(cssclass='code-sql', nowrap=False)
+            elif lang and lang.lower() in ['shell', 'bash', 'sh', 'zsh', 'ksh', 'powershell', 'pwsh']:
+                lexer = get_lexer_by_name('bash', stripall=True)
+                formatter = XShellStyle(cssclass='code-shell', nowrap=False)
+            elif lang:
+                # 其他语言使用默认样式
+                try:
+                    lexer = get_lexer_by_name(lang, stripall=True)
+                except ClassNotFound:
+                    lexer = guess_lexer(code)
+                formatter = HtmlFormatter(cssclass='code-generic', nowrap=False)
+            else:
+                # 没有指定语言，尝试猜测
+                try:
+                    lexer = guess_lexer(code)
+                except:
+                    lexer = get_lexer_by_name('text', stripall=True)
+                formatter = HtmlFormatter(cssclass='code-generic', nowrap=False)
+            
+            highlighted = highlight(code, lexer, formatter)
+            return highlighted
+        except Exception as e:
+            # 如果高亮失败，返回原始代码
+            return f'<pre><code>{code}</code></pre>'
+    
+    def _process_code_blocks(self, md_content):
+        """处理 Markdown 中的代码块，使用 Pygments 进行语法高亮"""
+        # 匹配 fenced code blocks: ```lang\ncode\n```
+        pattern = r'```(\w*)\n(.*?)```'
+        
+        def replace_code_block(match):
+            lang = match.group(1) or ''
+            code = match.group(2)
+            # 转义 HTML 特殊字符
+            code_escaped = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            return self._highlight_code_block(code_escaped, lang)
+        
+        # 使用 DOTALL 标志使 . 匹配换行符
+        processed = re.sub(pattern, replace_code_block, md_content, flags=re.DOTALL)
+        return processed
+    
     def _render_markdown_body(self, md_content):
         """只渲染 Markdown 的 body 内容"""
+        # 先处理代码块高亮
+        processed_content = self._process_code_blocks(md_content)
+        
+        # 然后使用 markdown 库处理其他内容（不包括 fenced_code，因为我们已经处理了）
         return markdown.markdown(
-            md_content,
+            processed_content,
             extensions=[
-                'markdown.extensions.fenced_code',
                 'markdown.extensions.tables',
                 'markdown.extensions.toc',
                 'markdown.extensions.nl2br'
@@ -674,11 +889,13 @@ class MarkdownEditor(QWidget):
         
     def _render_markdown(self, md_content):
         """将 Markdown 渲染为 HTML"""
+        # 先处理代码块高亮
+        processed_content = self._process_code_blocks(md_content)
+        
         # 转换 Markdown 为 HTML
         html_body = markdown.markdown(
-            md_content,
+            processed_content,
             extensions=[
-                'markdown.extensions.fenced_code',
                 'markdown.extensions.tables',
                 'markdown.extensions.toc',
                 'markdown.extensions.nl2br'
@@ -768,9 +985,8 @@ class MarkdownEditor(QWidget):
             "            border: 1px solid #E8E4DF;\n"
             "        }\n"
             "        \n"
-            "        /* 代码块 - 温暖的深色主题 */\n"
+            "        /* 代码块通用样式 */\n"
             "        pre {\n"
-            "            background: #2C2926;\n"
             "            padding: 24px 28px;\n"
             "            border-radius: 12px;\n"
             "            overflow-x: auto;\n"
@@ -785,21 +1001,10 @@ class MarkdownEditor(QWidget):
             "            left: 0;\n"
             "            right: 0;\n"
             "            height: 3px;\n"
-            "            background: linear-gradient(90deg, #7BA05B, #5B8A72, #6B5B95);\n"
             "            border-radius: 12px 12px 0 0;\n"
-            "        }\n"
-            "        pre::after {\n"
-            "            content: '● ● ●';\n"
-            "            position: absolute;\n"
-            "            top: 12px;\n"
-            "            left: 20px;\n"
-            "            font-size: 10px;\n"
-            "            letter-spacing: 6px;\n"
-            "            color: #8B7355;\n"
             "        }\n"
             "        pre code {\n"
             "            background: transparent;\n"
-            "            color: #E8E4DF;\n"
             "            padding: 0;\n"
             "            border: none;\n"
             "            font-size: 14px;\n"
@@ -809,16 +1014,126 @@ class MarkdownEditor(QWidget):
             "            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;\n"
             "        }\n"
             "        \n"
-            "        /* 代码语法高亮 - 自然柔和配色 */\n"
-            "        .keyword { color: #E07A5F; font-weight: 600; }\n"
-            "        .string { color: #81B29A; }\n"
-            "        .comment { color: #8B7355; font-style: italic; }\n"
-            "        .function { color: #7EB5D6; }\n"
-            "        .number { color: #F2CC8F; }\n"
-            "        .operator { color: #D4A5A5; }\n"
-            "        .class-name { color: #E07A5F; }\n"
-            "        .builtin { color: #98C9A3; }\n"
+            "        /* SQL 代码块样式 - DBeaver 风格 */\n"
+            "        .code-sql, pre.code-sql {\n"
+            "            background: #1E1E1E;\n"
+            "            color: #D4D4D4;\n"
+            "        }\n"
+            "        pre.code-sql::before {\n"
+            "            background: linear-gradient(90deg, #4A90D9, #569CD6, #4EC9B0);\n"
+            "        }\n"
+            "        pre.code-sql::after {\n"
+            "            content: 'SQL';\n"
+            "            position: absolute;\n"
+            "            top: 12px;\n"
+            "            right: 20px;\n"
+            "            font-size: 11px;\n"
+            "            color: #569CD6;\n"
+            "            font-weight: bold;\n"
+            "            letter-spacing: 1px;\n"
+            "        }\n"
             "        \n"
+            "        /* Shell 代码块样式 - XShell 风格 */\n"
+            "        .code-shell, pre.code-shell {\n"
+            "            background: #0C0C0C;\n"
+            "            color: #CCCCCC;\n"
+            "        }\n"
+            "        pre.code-shell::before {\n"
+            "            background: linear-gradient(90deg, #4EC9B0, #569CD6, #6A9955);\n"
+            "        }\n"
+            "        pre.code-shell::after {\n"
+            "            content: 'SHELL';\n"
+            "            position: absolute;\n"
+            "            top: 12px;\n"
+            "            right: 20px;\n"
+            "            font-size: 11px;\n"
+            "            color: #4EC9B0;\n"
+            "            font-weight: bold;\n"
+            "            letter-spacing: 1px;\n"
+            "        }\n"
+            "        \n"
+            "        /* 通用代码块样式 */\n"
+            "        .code-generic, pre.code-generic {\n"
+            "            background: #2C2926;\n"
+            "            color: #E8E4DF;\n"
+            "        }\n"
+            "        pre.code-generic::before {\n"
+            "            background: linear-gradient(90deg, #7BA05B, #5B8A72, #6B5B95);\n"
+            "        }\n"
+            "        pre.code-generic::after {\n"
+            "            content: '● ● ●';\n"
+            "            position: absolute;\n"
+            "            top: 12px;\n"
+            "            left: 20px;\n"
+            "            font-size: 10px;\n"
+            "            letter-spacing: 6px;\n"
+            "            color: #8B7355;\n"
+            "        }\n"
+            "        \n"
+            "        /* Pygments 语法高亮样式 */\n"
+            "        .hll { background-color: #49483e }\n"
+            "        .c { color: #6A9955; font-style: italic } /* Comment */\n"
+            "        .err { color: #F44747 } /* Error */\n"
+            "        .k { color: #569CD6; font-weight: bold } /* Keyword */\n"
+            "        .o { color: #D4D4D4 } /* Operator */\n"
+            "        .cm { color: #6A9955; font-style: italic } /* Comment.Multiline */\n"
+            "        .cp { color: #C586C0 } /* Comment.Preproc */\n"
+            "        .c1 { color: #6A9955; font-style: italic } /* Comment.Single */\n"
+            "        .cs { color: #6A9955; font-style: italic } /* Comment.Special */\n"
+            "        .gd { color: #F44747 } /* Generic.Deleted */\n"
+            "        .ge { font-style: italic } /* Generic.Emph */\n"
+            "        .gr { color: #F44747 } /* Generic.Error */\n"
+            "        .gh { color: #FFFFFF } /* Generic.Heading */\n"
+            "        .gi { color: #4EC9B0 } /* Generic.Inserted */\n"
+            "        .go { color: #D4D4D4 } /* Generic.Output */\n"
+            "        .gp { color: #D4D4D4 } /* Generic.Prompt */\n"
+            "        .gs { font-weight: bold } /* Generic.Strong */\n"
+            "        .gu { color: #FFFFFF } /* Generic.Subheading */\n"
+            "        .gt { color: #F44747 } /* Generic.Traceback */\n"
+            "        .kc { color: #569CD6; font-weight: bold } /* Keyword.Constant */\n"
+            "        .kd { color: #569CD6; font-weight: bold } /* Keyword.Declaration */\n"
+            "        .kn { color: #C586C0 } /* Keyword.Namespace */\n"
+            "        .kp { color: #569CD6 } /* Keyword.Pseudo */\n"
+            "        .kr { color: #569CD6; font-weight: bold } /* Keyword.Reserved */\n"
+            "        .kt { color: #4EC9B0 } /* Keyword.Type */\n"
+            "        .ld { color: #CE9178 } /* Literal.Date */\n"
+            "        .m { color: #B5CEA8 } /* Literal.Number */\n"
+            "        .s { color: #CE9178 } /* Literal.String */\n"
+            "        .na { color: #9CDCFE } /* Name.Attribute */\n"
+            "        .nb { color: #4EC9B0 } /* Name.Builtin */\n"
+            "        .nc { color: #4EC9B0 } /* Name.Class */\n"
+            "        .no { color: #569CD6 } /* Name.Constant */\n"
+            "        .nd { color: #DCDCAA } /* Name.Decorator */\n"
+            "        .ni { color: #D4D4D4 } /* Name.Entity */\n"
+            "        .ne { color: #4EC9B0 } /* Name.Exception */\n"
+            "        .nf { color: #DCDCAA } /* Name.Function */\n"
+            "        .nl { color: #9CDCFE } /* Name.Label */\n"
+            "        .nn { color: #4EC9B0 } /* Name.Namespace */\n"
+            "        .nt { color: #569CD6 } /* Name.Tag */\n"
+            "        .nv { color: #9CDCFE } /* Name.Variable */\n"
+            "        .ow { color: #C586C0 } /* Operator.Word */\n"
+            "        .w { color: #D4D4D4 } /* Text.Whitespace */\n"
+            "        .mb { color: #B5CEA8 } /* Literal.Number.Bin */\n"
+            "        .mf { color: #B5CEA8 } /* Literal.Number.Float */\n"
+            "        .mh { color: #B5CEA8 } /* Literal.Number.Hex */\n"
+            "        .mi { color: #B5CEA8 } /* Literal.Number.Integer */\n"
+            "        .mo { color: #B5CEA8 } /* Literal.Number.Oct */\n"
+            "        .sb { color: #CE9178 } /* Literal.String.Backtick */\n"
+            "        .sc { color: #CE9178 } /* Literal.String.Char */\n"
+            "        .sd { color: #6A9955 } /* Literal.String.Doc */\n"
+            "        .s2 { color: #CE9178 } /* Literal.String.Double */\n"
+            "        .se { color: #D7BA7D } /* Literal.String.Escape */\n"
+            "        .sh { color: #CE9178 } /* Literal.String.Heredoc */\n"
+            "        .si { color: #CE9178 } /* Literal.String.Interpol */\n"
+            "        .sx { color: #CE9178 } /* Literal.String.Other */\n"
+            "        .sr { color: #D16969 } /* Literal.String.Regex */\n"
+            "        .s1 { color: #CE9178 } /* Literal.String.Single */\n"
+            "        .ss { color: #CE9178 } /* Literal.String.Symbol */\n"
+            "        .bp { color: #4EC9B0 } /* Name.Builtin.Pseudo */\n"
+            "        .vc { color: #9CDCFE } /* Name.Variable.Class */\n"
+            "        .vg { color: #9CDCFE } /* Name.Variable.Global */\n"
+            "        .vi { color: #9CDCFE } /* Name.Variable.Instance */\n"
+            "        .il { color: #B5CEA8 } /* Literal.Number.Integer.Long */\n"
             "        /* 引用块 - 淡雅的蓝色 */\n"
             "        blockquote {\n"
             "            margin: 24px 0;\n"

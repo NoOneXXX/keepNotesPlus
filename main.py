@@ -1,15 +1,80 @@
 import os
 import sys
+import traceback
+import time
+from datetime import datetime
 
-from PySide6.QtWebEngineCore import QWebEngineSettings
-from PySide6.QtWebEngineWidgets import QWebEngineView
+# 辅助函数：获取资源文件路径（兼容开发环境和 Nuitka 打包环境）
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，兼容 Nuitka 打包后的环境"""
+    # 检查是否在 Nuitka 打包环境中
+    if hasattr(sys, 'frozen') or getattr(sys, '_MEIPASS', None):
+        # Nuitka 打包后的环境，使用可执行文件所在目录
+        base_path = os.path.dirname(sys.executable)
+    else:
+        # 开发环境，使用当前文件所在目录
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
-from gui.func.utils.json_utils import JsonEditor
-from gui.func.utils.read_pdf_epud_txt_word_type.read_pdf import PDFPreviewer
-from gui.func.utils.read_pdf_epud_txt_word_type.read_docx import read_word
-# Import the resource file to register the resources
-# 这个文件的引用不能删除 否则下面的图片就会找不到文件
-from gui.ui import resource_rc
+# 启动日志函数 - 用于捕获打包后的启动错误
+def write_startup_log(message, level="INFO"):
+    """写入启动日志到文件"""
+    try:
+        log_dir = get_resource_path("logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "startup.log")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] [{level}] {message}\n")
+    except Exception as e:
+        pass  # 忽略日志写入错误
+
+def log_exception(exc_type, exc_value, exc_traceback):
+    """全局异常处理器"""
+    error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    write_startup_log(error_msg, "ERROR")
+    # 显示错误对话框
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        if QApplication.instance():
+            QMessageBox.critical(None, "启动错误", f"程序启动失败:\n{str(exc_value)}\n\n详细信息请查看 logs/startup.log")
+    except:
+        pass
+
+# 设置全局异常处理器
+sys.excepthook = log_exception
+
+write_startup_log("=== 程序启动 ===")
+write_startup_log(f"Python 版本: {sys.version}")
+write_startup_log(f"工作目录: {os.getcwd()}")
+write_startup_log(f"sys.executable: {sys.executable}")
+write_startup_log(f"sys.frozen: {getattr(sys, 'frozen', False)}")
+
+try:
+    from PySide6.QtWebEngineCore import QWebEngineSettings
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    write_startup_log("PySide6 QtWebEngine 导入成功")
+except Exception as e:
+    write_startup_log(f"PySide6 QtWebEngine 导入失败: {e}", "ERROR")
+    raise
+
+try:
+    from gui.func.utils.json_utils import JsonEditor
+    from gui.func.utils.read_pdf_epud_txt_word_type.read_pdf import PDFPreviewer
+    from gui.func.utils.read_pdf_epud_txt_word_type.read_docx import read_word
+    write_startup_log("工具模块导入成功")
+except Exception as e:
+    write_startup_log(f"工具模块导入失败: {e}", "ERROR")
+    raise
+
+try:
+    # Import the resource file to register the resources
+    # 这个文件的引用不能删除 否则下面的图片就会找不到文件
+    from gui.ui import resource_rc
+    write_startup_log("Qt资源文件导入成功")
+except Exception as e:
+    write_startup_log(f"Qt资源文件导入失败: {e}", "ERROR")
+    raise
 
 from PySide6.QtCore import QSize, Qt, QtMsgType, qInstallMessageHandler, Slot, QUrl, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QFont, QIcon, QKeySequence, QTextCharFormat, QTextDocument, QImage
@@ -28,7 +93,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QHBoxLayout,
-    QSizePolicy, QFrame, QTreeWidgetItem, QTableWidgetItem, QVBoxLayout
+    QSizePolicy, QFrame, QTreeWidgetItem, QTableWidgetItem, QVBoxLayout, QStackedWidget
 )
 
 # Import the generated UI class from ui_main_window.py
@@ -36,7 +101,9 @@ from gui.ui.ui_main_window import Ui_MainWindow
 from gui.func.left.XPNotebookTree import XPNotebookTree
 from gui.func.right_top_corner.XPTreeRightTop import XPTreeRightTop
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
+from gui.func.right_bottom_corner.MarkdownEditor import MarkdownEditor
 from gui.func.top_menu.file_action import FileActions
+from gui.func.settings.settings_page import SettingsDialog
 from gui.func.singel_pkg.single_manager import sm
 from gui.func.utils.constants import FONT_SIZES
 try:
@@ -46,6 +113,7 @@ except ImportError:
 from gui.func.under_top_menu.color_picker import ColorPickerTool
 import shutil
 from urllib.parse import quote
+from gui.func.utils import logger
 
 # Custom Qt message handler for debugging
 def qt_message_handler(msg_type: QtMsgType, context, msg: str):
@@ -112,10 +180,20 @@ class MainWindow(QMainWindow):
         self.rich_text_editor.textChanged.connect(self.auto_save_note)
         self.rich_text_editor.selectionChanged.connect(self.update_format)
 
-        # Add editor to noteContentTable
-        self.ui.noteContentTable.setCellWidget(0, 0, self.rich_text_editor)
+        # 预创建 Markdown 编辑器（避免第一次打开时闪烁）
+        self.markdown_editor = MarkdownEditor(self)
+        self.markdown_editor.hide()
+
+        # 使用堆叠窗口管理多个编辑器
+        self.editor_stack = QStackedWidget()
+        self.editor_stack.addWidget(self.rich_text_editor)  # 索引 0
+        self.editor_stack.addWidget(self.markdown_editor)   # 索引 1
+
+        # Add editor stack to noteContentTable
+        self.ui.noteContentTable.setCellWidget(0, 0, self.editor_stack)
         # default editor is rich text editor
         self.current_editor = self.rich_text_editor  # 默认
+        self.current_editor_type = "richtext"  # 当前编辑器类型
         # 方法绑定 渲染pdf的时候转换引擎
         sm.send_pdf_path_2_main_signal.connect(self.replace_rictEditor_2_QWebEngineView)
         # 当pdf那边转换的了渲染引擎后 要重新换回来
@@ -140,21 +218,43 @@ class MainWindow(QMainWindow):
 
         # 初始化功能类
         self.file_actions = FileActions(self)  # 传入 self 以便弹窗等能绑定主窗口
+        
+        # File 菜单样式 - 现代优雅风格
         self.ui.menuFile.setStyleSheet("""
             QMenu {
                 background-color: #ffffff;
-                color: #000000;
-                border: 1px solid #ccc;
-                border-radius: 8px;  /* 设置圆角半径 */
-                padding: 4px;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                padding: 6px;
+                font-size: 14px;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
             }
             QMenu::item {
-                padding: 6px 24px;
-                border-radius: 4px;  /* 给 item 也加圆角，避免选中时遮住菜单圆角 */
+                padding: 8px 32px 8px 12px;
+                border-radius: 6px;
+                color: #334155;
+                margin: 2px 4px;
             }
             QMenu::item:selected {
-                background-color: #cce8ff;  /* 浅蓝色 */
-                border-radius: 4px;
+                background-color: #EFF6FF;
+                color: #2563EB;
+            }
+            QMenu::item:disabled {
+                color: #94A3B8;
+            }
+            QMenu::icon {
+                padding-left: 8px;
+                margin-left: 0px;
+            }
+            QMenu::separator {
+                height: 1px;
+                background: #E2E8F0;
+                margin: 6px 12px;
+            }
+            QMenu::indicator {
+                width: 16px;
+                height: 16px;
+                margin-left: 8px;
             }
         """)
 
@@ -164,31 +264,51 @@ class MainWindow(QMainWindow):
         self.ui.menuFile.addAction(self.file_actions.open_notebook_action())
         # 打开最近的笔记本
         self.ui.menuFile.addAction(self.file_actions.open_recent_notebook_action())
-
+        
+        # 分隔线
+        self.ui.menuFile.addSeparator()
 
         save_file_action = QAction(
-            QIcon(":/images/disk.png"), "Save", self
+            QIcon(":/images/disk.png"), "保存", self
         )
-        save_file_action.setStatusTip("Save current page")
+        save_file_action.setStatusTip("保存当前页面")
+        save_file_action.setShortcut(QKeySequence.StandardKey.Save)
         save_file_action.triggered.connect(self.file_save)
-
+        self.ui.menuFile.addAction(save_file_action)
 
         saveas_file_action = QAction(
             QIcon(":/images/disk--pencil.png"),
-            "Save As...",
+            "另存为...",
             self,
         )
-        saveas_file_action.setStatusTip("Save current page to specified file")
+        saveas_file_action.setStatusTip("保存到指定文件")
         saveas_file_action.triggered.connect(self.file_saveas)
-
+        self.ui.menuFile.addAction(saveas_file_action)
+        
+        # 分隔线
+        self.ui.menuFile.addSeparator()
 
         print_action = QAction(
             QIcon(":/images/printer.png"),
-            "Print...",
+            "打印...",
             self,
         )
-        print_action.setStatusTip("Print current page")
+        print_action.setStatusTip("打印当前页面")
+        print_action.setShortcut(QKeySequence.StandardKey.Print)
         print_action.triggered.connect(self.file_print)
+        self.ui.menuFile.addAction(print_action)
+
+        # 分隔线
+        self.ui.menuFile.addSeparator()
+        
+        # 设置按钮
+        settings_action = QAction(
+            "⚙ 设置",
+            self,
+        )
+        settings_action.setStatusTip("打开设置页面")
+        settings_action.triggered.connect(self.open_settings)
+        self.ui.menuFile.addAction(settings_action)
 
 
         edit_toolbar = QToolBar("Edit")
@@ -430,6 +550,9 @@ class MainWindow(QMainWindow):
 
         self.update_format()
         self.update_title()
+        
+        # 标记窗口已完成初始化，用于控制 resizeEvent 的行为
+        self._window_initialized = True
 
     def block_signals(self, objects, b):
         for o in objects:
@@ -474,6 +597,9 @@ class MainWindow(QMainWindow):
             self.rich_text_editor.clean_base64_images()
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(self.rich_text_editor.toHtml())
+            
+            # 更新元数据中的修改时间
+            self._update_modified_time(self.richtext_saved_path)
 
 
 
@@ -643,6 +769,8 @@ class MainWindow(QMainWindow):
         # 先清空 verticalLayout 中的旧组件
         self.clear_layout(self.ui.verticalLayout)
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
+        # 连接 Markdown 编辑器信号
+        tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
 
         self.ui.verticalLayout.addWidget(tree_widget)
 
@@ -664,8 +792,11 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """Maintain splitter sizes on resize."""
         super().resizeEvent(event)
-        self.ui.splitter.setSizes([300, self.width() - 300])
-        self.ui.verticalSplitter.setSizes([215, self.height() - 215])
+        # 只在窗口初始化完成后且可见时调整 splitter，避免启动时闪烁
+        # 使用标志位确保只在用户手动调整大小时响应，而非初始化时
+        if hasattr(self, '_window_initialized') and self.isVisible():
+            self.ui.splitter.setSizes([300, self.width() - 300])
+            self.ui.verticalSplitter.setSizes([215, self.height() - 215])
     '''
     富文本框的路径接收
     第一个参数判断路径 第二个参数判断树状图的属性 是属于谁的
@@ -680,11 +811,16 @@ class MainWindow(QMainWindow):
             self.clear_layout(self.layout)
             tree = XPTreeRightTop(path_,rich_text_edit=self.rich_text_editor)
             tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  #  设置扩展策略
+            # 连接 Markdown 编辑器信号
+            tree.open_markdown_editor.connect(self.open_markdown_editor)
             self.layout.addWidget(tree)
 
     # 动态的加载pdf
     @Slot(str)
     def replace_rictEditor_2_QWebEngineView(self, file_path):
+        # 先切换回富文本编辑器（隐藏堆叠窗口）
+        self.change_2_rich_text_editor()
+        
         #获取后缀
         webview = None
         ext = os.path.splitext(file_path)[1].lower()
@@ -696,48 +832,160 @@ class MainWindow(QMainWindow):
             docx_ = read_word(file_path)
             webview = docx_.render_word_to_webview()
 
-        # 替换 UI 中组件
-        current_widget = self.ui.noteContentTable.cellWidget(0, 0)
-        if current_widget:
-            current_widget.setParent(None)
+        # 替换 UI 中组件 - 需要替换堆叠窗口本身
+        self.ui.noteContentTable.removeCellWidget(0, 0)
         self.ui.noteContentTable.setCellWidget(0, 0, webview)
         self.ui.noteContentTable.setRowHeight(0, self.ui.noteContentTable.height())
         self.ui.noteContentTable.setColumnWidth(0, self.ui.noteContentTable.width())
         self.current_editor = webview
+        self.current_editor_type = "webview"
 
     @Slot()
     def change_2_rich_text_editor(self):
-        if isinstance(self.current_editor, QWebEngineView):
-            # 替换 UI 中组件
-            current_widget = self.ui.noteContentTable.cellWidget(0, 0)
-            if current_widget:
-                current_widget.setParent(None)
-            # 富文本框
-            self.rich_text_editor = RichTextEdit(self)
-            # 监听文件改动 只要文件改动就进行保存
-            self.rich_text_editor.textChanged.connect(self.auto_save_note)
-            self.rich_text_editor.selectionChanged.connect(self.update_format)
-
-            # Add editor to noteContentTable
-            self.ui.noteContentTable.setCellWidget(0, 0, self.rich_text_editor)
-            # default editor is rich text editor
-            self.current_editor = self.rich_text_editor  # 默认
+        # 如果当前是 Markdown 编辑器，先保存
+        if self.current_editor_type == "markdown":
+            self.markdown_editor.save_file()
+        
+        # 切换到富文本编辑器（只是切换堆叠窗口索引，无闪烁）
+        self.editor_stack.setCurrentIndex(0)
+        self.current_editor = self.rich_text_editor
+        self.current_editor_type = "richtext"
+        
         # 回传这个组件给file_load 用来更新他们的组件
         sm.received_rich_text_signal.emit(self.rich_text_editor)
 
         # 回传这个参数给left 左侧的树点击事件
         sm.received_rich_text_2_left_click_signal.emit(self.rich_text_editor)
 
+    @Slot(str)
+    def open_markdown_editor(self, file_path):
+        """打开 Markdown 编辑器"""
+        # 获取 Markdown 文件路径
+        md_path = os.path.join(file_path, "document.md")
+        
+        # 如果已经在 Markdown 编辑器，直接加载文件
+        if self.current_editor_type == "markdown":
+            self.markdown_editor.set_file_path(md_path)
+            if os.path.exists(md_path):
+                self.markdown_editor.load_file(md_path)
+            self.path = md_path
+            self.update_title()
+            return
+        
+        # 切换到 Markdown 编辑器（只是切换堆叠窗口索引，无闪烁）
+        self.markdown_editor.set_file_path(md_path)
+        if os.path.exists(md_path):
+            self.markdown_editor.load_file(md_path)
+        
+        # 连接内容变化信号（使用标志位避免重复连接和断开警告）
+        if not hasattr(self, '_markdown_signal_connected') or not self._markdown_signal_connected:
+            self.markdown_editor.content_changed.connect(self.auto_save_markdown)
+            self._markdown_signal_connected = True
+        
+        # 切换堆叠窗口索引
+        self.editor_stack.setCurrentIndex(1)
+        self.current_editor = self.markdown_editor
+        self.current_editor_type = "markdown"
+        
+        # 更新标题
+        self.path = md_path
+        self.update_title()
+    
+    def auto_save_markdown(self):
+        """自动保存 Markdown 文件"""
+        if hasattr(self, 'markdown_editor') and self.markdown_editor:
+            # 使用编辑器当前的文件路径保存
+            self.markdown_editor.save_file()
+            
+            # 更新元数据中的修改时间
+            if self.markdown_editor.md_file_path:
+                # md 文件在子目录下，需要获取父目录作为笔记路径
+                note_path = os.path.dirname(self.markdown_editor.md_file_path)
+                self._update_modified_time(note_path)
+            
+            self.status.showMessage("已自动保存", 2000)
+    
+    def _update_modified_time(self, note_path):
+        """更新笔记元数据中的修改时间"""
+        if not note_path:
+            return
+        try:
+            editor = JsonEditor()
+            meta_path = os.path.join(note_path, ".metadata.json")
+            if os.path.exists(meta_path):
+                metadata = editor.read_node_infos(note_path)
+                if metadata and isinstance(metadata, dict):
+                    metadata['node']['detail_info']['updated_time'] = int(time.time())
+                    editor.writeByData(meta_path, metadata)
+        except Exception as e:
+            pass  # 忽略更新时间错误
+
+    def open_settings(self):
+        """打开设置对话框"""
+        # 获取当前笔记本路径
+        notebook_path = None
+        if hasattr(self, 'file_actions') and self.file_actions:
+            if hasattr(self.file_actions, 'path_') and self.file_actions.path_:
+                notebook_path = self.file_actions.path_
+        
+        # 创建并显示设置对话框
+        dialog = SettingsDialog(notebook_path, self)
+        dialog.exec()
+
 
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setApplicationName("Megasolid Idiom")
-    qInstallMessageHandler(qt_message_handler)
-    # 增加全局样式 虽然不是很成功 先放着 后面慢慢的调试
-    with open("gui/ui/qss/light.qss", "r", encoding="utf-8") as f:
-        app.setStyleSheet(f.read())
+    try:
+        write_startup_log("开始创建 QApplication")
+        app = QApplication(sys.argv)
+        app.setApplicationName("Megasolid Idiom")
+        qInstallMessageHandler(qt_message_handler)
+        write_startup_log("QApplication 创建成功")
+        
+        # 增加全局样式
+        qss_path = get_resource_path("gui/ui/qss/light.qss")
+        write_startup_log(f"样式文件路径: {qss_path}")
+        if os.path.exists(qss_path):
+            with open(qss_path, "r", encoding="utf-8") as f:
+                app.setStyleSheet(f.read())
+            write_startup_log("样式文件加载成功")
+        else:
+            write_startup_log(f"警告: 找不到样式文件 {qss_path}", "WARN")
 
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec())
+        write_startup_log("开始创建主窗口")
+        window = MainWindow()
+        write_startup_log("主窗口创建成功")
+        
+        try:
+            logger.info(f'已经启动成功======')
+        except:
+            pass
+        
+        # 先设置窗口大小和位置，再显示窗口，避免闪烁
+        window.resize(1079, 873)
+        window.setGeometry(
+            QApplication.primaryScreen().availableGeometry().width() // 2 - 540,
+            QApplication.primaryScreen().availableGeometry().height() // 2 - 437,
+            1079, 873
+        )
+        
+        # 初始化 splitter 大小，避免显示后再调整导致闪烁
+        window.ui.splitter.setSizes([300, 779])
+        window.ui.verticalSplitter.setSizes([215, 658])
+        
+        window.show()
+        write_startup_log("窗口显示完成，进入主循环")
+        sys.exit(app.exec())
+    except Exception as e:
+        error_msg = f"主程序启动失败: {e}\n{traceback.format_exc()}"
+        write_startup_log(error_msg, "ERROR")
+        try:
+            logger.error(f'main的启动报错信息是:{e}')
+        except:
+            pass
+        # 显示错误对话框
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(None, "启动错误", f"程序启动失败:\n{str(e)}\n\n详细信息请查看 logs/startup.log")
+        except:
+            pass

@@ -7,11 +7,12 @@ from gui.func.left.dropItemEvent import CustomTreeWidget
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
 from gui.ui import resource_rc
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QLabel, QTreeWidget,
-    QTreeWidgetItem, QStyleFactory, QMessageBox, QHeaderView, QMenu, QInputDialog, QFileDialog
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
+    QTreeWidgetItem, QStyleFactory, QMessageBox, QHeaderView, QMenu, QInputDialog, QFileDialog,
+    QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QDialog, QPushButton
 )
-from PySide6.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QAction, QImage, QTextDocument
-from PySide6.QtCore import Qt, Slot, QUrl
+from PySide6.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QAction, QImage, QTextDocument, QCursor
+from PySide6.QtCore import Qt, Slot, QUrl, QMimeData, QTimer, QPropertyAnimation, QEasingCurve, Property, Signal
 import sys
 import os
 from gui.func.singel_pkg.single_manager import sm
@@ -20,13 +21,16 @@ from gui.func.utils.tools_utils import (read_parent_id, create_metadata_file_und
                                         create_metadata_dir_under_dir, scan_supported_files)
 from gui.func.left.CustomTreeItemDelegate import CustomTreeItemDelegate
 from gui.func.utils.file_loader import file_loader
-from ..utils import copy_and_overwrite
+from ..utils import copy_and_overwrite,get_parent_path
 
 
 
 
 
 class XPNotebookTree(QWidget):
+    # 信号定义
+    open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器，参数为文件路径
+    
     def __init__(self, path, rich_text_edit=None, parent=None):
         super().__init__(parent)
         self.custom_path = os.path.expanduser(path)
@@ -44,68 +48,6 @@ class XPNotebookTree(QWidget):
 
         self.tree = None
         self.setup_ui()
-
-    def populate_tree(self, parent_item, path):
-        try:
-            items = []
-            for name in os.listdir(path):
-                full_path = os.path.join(path, name)
-                # 判断这个文件夹是不是文件 读取它下面的json配置
-                editor = JsonEditor()
-                # 读取detail_info的信息
-                detail_info = editor.read_file_metadata_infos(full_path)
-                content_type = '0'
-                order_dir = 0
-                if detail_info:
-                    content_type = detail_info.get('content_type', None)
-                    # 获取到order的值
-                    order_dir = detail_info.get('order', None)
-                # 获取
-                if 'dir' == content_type:
-                    # 封装这个树
-                    folder_item = QTreeWidgetItem()
-                    self.set_item_icon(folder_item, content_type, 'collapsed', detail_info)
-                    folder_item.setFont(0, QFont("Microsoft YaHei", 12))
-                    folder_item.setData(0, Qt.UserRole, full_path)
-                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
-                    folder_item.setText(0, name)
-                    # 加入到集合
-                    items.append((folder_item, order_dir))
-                    # 懒加载标记项
-                    if detail_info.get('has_children', False):
-                        folder_item.addChild(QTreeWidgetItem())
-                elif content_type == "file":
-                    # 封装这个树
-                    folder_item = QTreeWidgetItem()
-                    folder_item.setData(0, Qt.UserRole, full_path)
-                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
-                    folder_item.setText(0, os.path.splitext(name)[0])
-                    folder_item.setIcon(0, self.file_icon)
-                    # 加入到集合
-                    items.append((folder_item, order_dir))
-                    #  也允许子文件结构（懒加载子节点）
-                    if detail_info.get('has_children', False):
-                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
-                elif content_type.find('attachfile') != -1:
-                    # 处理 epub 文件类型
-                    # 封装这个树
-                    folder_item = QTreeWidgetItem()
-                    folder_item.setData(0, Qt.UserRole, full_path)
-                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
-                    folder_item.setText(0, name)
-                    folder_item.setIcon(0, self.attach_file)  # 用你自己的 epub 图标路径
-                    # 加入到集合
-                    items.append((folder_item, order_dir))
-                    if detail_info.get('has_children', False):
-                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
-
-            # 按 order 排序
-            items.sort(key=lambda x: x[1])
-            for item, _ in items:
-                parent_item.addChild(item)
-
-        except PermissionError:
-            pass
 
     def setup_ui(self):
         if not os.path.exists(self.custom_path):
@@ -154,6 +96,8 @@ class XPNotebookTree(QWidget):
         root = QTreeWidgetItem(self.tree)
         notebook_name = os.path.basename(self.custom_path)
         root.setText(0, notebook_name)
+        # 将路径存储到 UserRole+3 用于委托绘制灰色显示
+        root.setData(0, Qt.UserRole + 3, f"  {self.custom_path}(🙋如果你看到了这句话，那就说明这里有一句话！！！🤪🤪🤪)")
         root.setIcon(0, self.folder_closed_icon)
         font = QFont("Segoe UI", 12)
         font.setBold(True)
@@ -173,8 +117,83 @@ class XPNotebookTree(QWidget):
         self.tree.expandAll()
         # 左键点击事件 点击的时候就展开 不是只有点击前面的加号减号才展开
         self.tree.itemClicked.connect(self.on_item_clicked)
-        self.tree.setItemDelegate(CustomTreeItemDelegate())
+        self.tree.setItemDelegate(CustomTreeItemDelegate(self.tree))
         self.tree.itemChanged.connect(self.on_item_renamed)
+
+    def populate_tree(self, parent_item, path):
+        try:
+            items = []
+            for name in os.listdir(path):
+                full_path = os.path.join(path, name)
+                # 判断这个文件夹是不是文件 读取它下面的json配置
+                editor = JsonEditor()
+                # 读取detail_info的信息
+                detail_info = editor.read_file_metadata_infos(full_path)
+                content_type = '0'
+                order_dir = 0
+                if detail_info:
+                    content_type = detail_info.get('content_type', None)
+                    # 获取到order的值
+                    order_dir = detail_info.get('order', None)
+                # 获取
+                if 'dir' == content_type:
+                    # 封装这个树
+                    folder_item = QTreeWidgetItem()
+                    self.set_item_icon(folder_item, content_type, 'collapsed', detail_info)
+                    folder_item.setFont(0, QFont("Microsoft YaHei", 12))
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, name)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    # 懒加载标记项
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())
+                elif content_type == "file":
+                    # 封装这个树
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, os.path.splitext(name)[0])
+                    folder_item.setIcon(0, self.file_icon)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    #  也允许子文件结构（懒加载子节点）
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
+                elif content_type == "markdown":
+                    # 处理 Markdown 文件类型
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, name)
+                    # 使用 Markdown 图标
+                    markdown_icon = QIcon(QPixmap(":images/markdown.png"))
+                    folder_item.setIcon(0, markdown_icon)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
+                elif content_type.find('attachfile') != -1:
+                    # 处理 epub 文件类型
+                    # 封装这个树
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, name)
+                    folder_item.setIcon(0, self.attach_file)  # 用你自己的 epub 图标路径
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
+
+            # 按 order 排序
+            items.sort(key=lambda x: x[1])
+            for item, _ in items:
+                parent_item.addChild(item)
+
+        except PermissionError:
+            pass
 
     def on_item_renamed(self, item, column):
         if not item or column != 0:
@@ -210,8 +229,6 @@ class XPNotebookTree(QWidget):
     左键点击的方法实现
     '''
     def on_item_clicked(self, item):
-        # 触发这个更新富文本框的信号
-        sm.change_web_engine_2_richtext_signal.emit()
         # 这个是在点击的时候将树状图给展开和合并
         if item.childCount() > 0:
             if item.isExpanded():
@@ -225,6 +242,15 @@ class XPNotebookTree(QWidget):
 
         editor = JsonEditor()
         content_type =  editor.read_notebook_if_dir(file_path)
+        
+        # 处理 Markdown 文件类型 - 提前返回，不触发富文本框信号
+        if content_type == "markdown":
+            self.open_markdown_editor.emit(file_path)
+            return
+        
+        # 触发这个更新富文本框的信号（Markdown 类型不触发）
+        sm.change_web_engine_2_richtext_signal.emit()
+        
         # 这个是发送地址给main那边 在那边自动保存的时候使用
         sm.send_current_file_path_2_main_richtext_signal.emit(file_path, 'left')
 
@@ -257,30 +283,221 @@ class XPNotebookTree(QWidget):
 
         menu = QMenu(self.tree)
 
-        open_action = QAction(QIcon(":images/open.png"), "打开", self)
-        rename_action = QAction(QIcon(":images/open.png"), "重命名", self)
-        create_file_action = QAction(QIcon(":images/open.png"), "创建子文件", self)
-        create_dir_action = QAction(QIcon(":images/open.png"), "创建文件夹", self)
-        delete_action = QAction(QIcon(":images/open.png"), "删除", self)
-        adds_on_action = QAction(QIcon(":images/open.png"), "添加附件", self)
-        # 方法绑定
-        open_action.triggered.connect(lambda: self.open_item(item))
-        rename_action.triggered.connect(lambda: self.rename_item(item))
-        create_file_action.triggered.connect(lambda: self.create_file_item(item))
-        create_dir_action.triggered.connect(lambda: self.create_dir_action(item))
-        delete_action.triggered.connect(lambda: self.delete_item(item))
-        adds_on_action.triggered.connect(lambda: self.adds_on_item(item))
-        # 方法绑定 结束
-        menu.addAction(open_action)
-        menu.addAction(rename_action)
-        menu.addAction(create_file_action)
-        menu.addAction(create_dir_action)
-        menu.addAction(adds_on_action)
+        # 获取当前节点的路径和类型
+        item_path = item.data(0, Qt.UserRole)
+        content_type = ""
+        detail_info = None
+        if item_path:
+            editor = JsonEditor()
+            content_type = editor.read_notebook_if_dir(item_path)
+            detail_info = editor.read_file_metadata_infos(item_path)
 
-        menu.addAction(delete_action)
-        # 右键点击的样式 封装到了文件的最底端
-        menu.setStyleSheet(WINDOWS_MENU_STYLE)
-        menu.exec(self.tree.viewport().mapToGlobal(point))
+        # 判断是否是附件类型
+        is_attachment = content_type and content_type.find('attachfile') != -1
+        
+        # 判断是否是 trash 文件夹
+        is_trash_folder = detail_info and detail_info.get('title', '') == 'trash'
+        
+        # 判断是否在 trash 文件夹内
+        is_in_trash = self._is_item_in_trash(item)
+
+        if is_trash_folder:
+            # trash 文件夹的右键菜单：清空回收站
+            empty_trash_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  清空回收站", self)
+            empty_trash_action.triggered.connect(lambda: self.empty_trash(item))
+            menu.addAction(empty_trash_action)
+            
+        elif is_in_trash:
+            # trash 内文件的右键菜单：永久删除、恢复文件
+            permanent_delete_action = QAction(self._create_colored_icon("☠", "#DC2626"), "  永久删除", self)
+            permanent_delete_action.triggered.connect(lambda: self.permanent_delete_item(item))
+            menu.addAction(permanent_delete_action)
+            
+            restore_action = QAction(self._create_colored_icon("↩", "#10B981"), "  恢复文件", self)
+            restore_action.triggered.connect(lambda: self.restore_item(item))
+            menu.addAction(restore_action)
+            
+        elif is_attachment:
+            # 附件类型的右键菜单：复制附件
+            copy_attachment_action = QAction(self._create_colored_icon("📋", "#8B5CF6"), "  复制附件", self)
+            copy_attachment_action.triggered.connect(lambda: self.copy_attachment(item))
+            menu.addAction(copy_attachment_action)
+
+            open_action = QAction(self._create_colored_icon("📂", "#3B82F6"), "  打开", self)
+            open_action.triggered.connect(lambda: self.open_item(item))
+            menu.addAction(open_action)
+
+            rename_action = QAction(self._create_colored_icon("✏", "#F59E0B"), "  重命名", self)
+            rename_action.triggered.connect(lambda: self.rename_item(item))
+            menu.addAction(rename_action)
+
+            delete_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  删除", self)
+            delete_action.triggered.connect(lambda: self.delete_item(item))
+            menu.addAction(delete_action)
+        else:
+            # 普通文件夹/文件的右键菜单
+            open_action = QAction(self._create_colored_icon("📂", "#3B82F6"), "  打开", self)
+            rename_action = QAction(self._create_colored_icon("✏", "#F59E0B"), "  重命名", self)
+            create_file_action = QAction(self._create_colored_icon("📄", "#10B981"), "  创建子文件", self)
+            create_dir_action = QAction(self._create_colored_icon("📁", "#8B5CF6"), "  创建文件夹", self)
+            delete_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  删除", self)
+            adds_on_action = QAction(self._create_colored_icon("📎", "#06B6D4"), "  添加附件", self)
+            # 方法绑定
+            open_action.triggered.connect(lambda: self.open_item(item))
+            rename_action.triggered.connect(lambda: self.rename_item(item))
+            create_file_action.triggered.connect(lambda: self.create_file_item(item))
+            create_dir_action.triggered.connect(lambda: self.create_dir_action(item))
+            delete_action.triggered.connect(lambda: self.delete_item(item))
+            adds_on_action.triggered.connect(lambda: self.adds_on_item(item))
+            # 方法绑定 结束
+            menu.addAction(open_action)
+            menu.addAction(rename_action)
+            menu.addSeparator()
+            menu.addAction(create_file_action)
+            menu.addAction(create_dir_action)
+            menu.addAction(adds_on_action)
+            menu.addSeparator()
+            menu.addAction(delete_action)
+
+        # 使用自定义菜单
+        menu = ModernContextMenu(self)
+
+        if is_trash_folder:
+            # trash 文件夹的右键菜单：清空回收站
+            menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
+            
+        elif is_in_trash:
+            # trash 内文件的右键菜单：永久删除、恢复文件
+            menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
+            menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
+            
+        elif is_attachment:
+            # 附件类型的右键菜单：复制附件
+            menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
+            menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
+            menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
+            menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
+        else:
+            # 普通文件夹/文件的右键菜单
+            menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
+            menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
+            menu.add_separator()
+            menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
+            menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
+            menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
+            menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
+            menu.add_separator()
+            menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
+
+        # 显示菜单
+        menu.show_menu(self.tree.viewport().mapToGlobal(point))
+
+    '''
+    创建彩色图标
+    '''
+    def _create_colored_icon(self, emoji, color_hex):
+        """创建带颜色的图标"""
+        from PySide6.QtGui import QPainter, QFont
+        
+        # 创建一个透明背景的图标
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # 设置字体
+        font = QFont("Segoe UI Emoji", 14)
+        painter.setFont(font)
+        
+        # 设置颜色
+        color = QColor(color_hex)
+        painter.setPen(color)
+        
+        # 绘制 emoji
+        painter.drawText(pixmap.rect(), Qt.AlignCenter, emoji)
+        painter.end()
+        
+        return QIcon(pixmap)
+
+    '''
+    判断节点是否在 trash 文件夹内
+    '''
+    def _is_item_in_trash(self, item):
+        parent = item.parent()
+        while parent:
+            parent_path = parent.data(0, Qt.UserRole)
+            if parent_path:
+                editor = JsonEditor()
+                detail_info = editor.read_file_metadata_infos(parent_path)
+                if detail_info and detail_info.get('title', '') == 'trash':
+                    return True
+            parent = parent.parent()
+        return False
+
+    '''
+    获取 trash 文件夹路径
+    '''
+    def _get_trash_path(self):
+        # trash 文件夹在根目录下
+        trash_path = os.path.join(self.custom_path, "trash")
+        if os.path.exists(trash_path):
+            return trash_path
+        return None
+
+    '''
+    获取文件原始位置（用于恢复）
+    '''
+    def _get_original_path(self, item):
+        item_path = item.data(0, Qt.UserRole)
+        if not item_path:
+            return None
+        
+        # 从 metadata 中获取原始位置信息
+        editor = JsonEditor()
+        metadata = editor.read_node_infos(item_path)
+        if metadata and 'node' in metadata:
+            original_path = metadata['node']['detail_info'].get('original_path', '')
+            if original_path:
+                return original_path
+        
+        # 如果没有存储原始路径，尝试从父级推断
+        # 获取 trash 的父目录（即根目录）
+        trash_path = self._get_trash_path()
+        if trash_path:
+            # 原始位置应该是根目录
+            return self.custom_path
+        return None
+
+    '''
+    复制附件到剪贴板
+    '''
+    def copy_attachment(self, item):
+        item_path = item.data(0, Qt.UserRole)
+        if not item_path or not os.path.exists(item_path):
+            show_toast(self, "附件路径不存在", ToastWidget.ERROR)
+            return
+
+        try:
+            # 获取附件文件夹中的实际文件
+            # 附件存储在文件夹中，需要找到实际的文件
+            files = [f for f in os.listdir(item_path) if not f.startswith('.')]
+            if not files:
+                show_toast(self, "附件文件夹为空", ToastWidget.WARNING)
+                return
+
+            # 通常附件文件夹中只有一个文件（即附件本身）
+            attachment_file = os.path.join(item_path, files[0])
+
+            # 复制文件到剪贴板
+            clipboard = QApplication.clipboard()
+            mime_data = QMimeData()
+            mime_data.setUrls([QUrl.fromLocalFile(attachment_file)])
+            clipboard.setMimeData(mime_data)
+
+            show_toast(self, f"附件已复制到剪贴板\n{files[0]}", ToastWidget.SUCCESS)
+        except Exception as e:
+            show_toast(self, f"复制失败: {str(e)}", ToastWidget.ERROR)
 
     '''
     这个更新是防止懒加载的时候因为重命名导致加载失败
@@ -322,7 +539,447 @@ class XPNotebookTree(QWidget):
 
 
     def delete_item(self, item):
-        print(f"删除: {item.text(0)}")
+        """删除文件/文件夹，移动到回收站"""
+        item_path = item.data(0, Qt.UserRole)
+        if not item_path or not os.path.exists(item_path):
+            show_toast(self, "文件路径不存在", ToastWidget.ERROR)
+            return
+
+        # 获取 trash 路径
+        trash_path = self._get_trash_path()
+        if not trash_path:
+            show_toast(self, "回收站不存在", ToastWidget.ERROR)
+            return
+
+        try:
+            # 获取文件名
+            item_name = os.path.basename(item_path)
+            target_path = os.path.join(trash_path, item_name)
+            
+            # 如果目标已存在，添加时间戳后缀
+            if os.path.exists(target_path):
+                timestamp = int(time.time())
+                item_name_base = os.path.splitext(item_name)[0]
+                item_name_ext = os.path.splitext(item_name)[1]
+                target_path = os.path.join(trash_path, f"{item_name_base}_{timestamp}{item_name_ext}")
+
+            # 保存原始路径到 metadata
+            editor = JsonEditor()
+            metadata = editor.read_node_infos(item_path)
+            if metadata and 'node' in metadata:
+                metadata['node']['detail_info']['original_path'] = os.path.dirname(item_path)
+                editor.writeByData(os.path.join(item_path, ".metadata.json"), metadata)
+
+            # 移动文件到回收站
+            import shutil
+            shutil.move(item_path, target_path)
+
+            # 更新父节点的 has_children 状态
+            parent_item = item.parent()
+            if parent_item:
+                parent_path = parent_item.data(0, Qt.UserRole)
+                if parent_path:
+                    # 检查父目录下是否还有子文件夹
+                    has_children = any(os.path.isdir(os.path.join(parent_path, f)) 
+                                      for f in os.listdir(parent_path) 
+                                      if not f.startswith('.'))
+                    parent_metadata = editor.read_node_infos(parent_path)
+                    if parent_metadata and 'node' in parent_metadata:
+                        parent_metadata['node']['detail_info']['has_children'] = has_children
+                        editor.writeByData(os.path.join(parent_path, ".metadata.json"), parent_metadata)
+
+                # 从树中移除节点
+                parent_item.removeChild(item)
+
+            # 更新回收站的 has_children 状态
+            trash_metadata = editor.read_node_infos(trash_path)
+            if trash_metadata and 'node' in trash_metadata:
+                trash_metadata['node']['detail_info']['has_children'] = True
+                editor.writeByData(os.path.join(trash_path, ".metadata.json"), trash_metadata)
+
+            # 刷新 trash 文件夹显示
+            self._refresh_trash_folder()
+
+            show_toast(self, f"已移动到回收站\n{item_name}", ToastWidget.SUCCESS)
+
+        except Exception as e:
+            show_toast(self, f"删除失败: {str(e)}", ToastWidget.ERROR)
+
+    '''
+    刷新 trash 文件夹
+    '''
+    def _refresh_trash_folder(self):
+        """刷新回收站文件夹以显示新删除的文件"""
+        root = self.tree.topLevelItem(0)
+        if not root:
+            return
+        
+        # 查找 trash 节点
+        for i in range(root.childCount()):
+            child = root.child(i)
+            child_path = child.data(0, Qt.UserRole)
+            if child_path:
+                editor = JsonEditor()
+                detail_info = editor.read_file_metadata_infos(child_path)
+                if detail_info and detail_info.get('title', '') == 'trash':
+                    # 找到 trash 节点，刷新其子节点
+                    child.takeChildren()
+                    self.populate_tree(child, child_path)
+                    child.setExpanded(True)
+                    break
+
+    '''
+    清空回收站
+    '''
+    def empty_trash(self, trash_item):
+        """清空回收站，需要二次确认"""
+        # 二次确认对话框
+        confirm_dialog = QMessageBox(self)
+        confirm_dialog.setIcon(QMessageBox.Warning)
+        confirm_dialog.setWindowTitle("清空回收站")
+        confirm_dialog.setText("确定要清空回收站吗？")
+        confirm_dialog.setInformativeText("此操作将永久删除回收站中的所有文件，不可恢复！")
+        confirm_dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm_dialog.setDefaultButton(QMessageBox.No)
+        confirm_dialog.button(QMessageBox.Yes).setText("确定清空")
+        confirm_dialog.button(QMessageBox.No).setText("取消")
+        
+        # 设置样式
+        confirm_dialog.setStyleSheet("""
+            QMessageBox {
+                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+                font-size: 13px;
+            }
+            QPushButton {
+                padding: 6px 20px;
+                border-radius: 4px;
+                min-width: 80px;
+            }
+            QPushButton[text="确定清空"] {
+                background-color: #EF4444;
+                color: white;
+            }
+            QPushButton[text="取消"] {
+                background-color: #E5E7EB;
+                color: #333;
+            }
+        """)
+        
+        reply = confirm_dialog.exec()
+        
+        if reply != QMessageBox.Yes:
+            return
+
+        trash_path = trash_item.data(0, Qt.UserRole)
+        if not trash_path or not os.path.exists(trash_path):
+            show_toast(self, "回收站路径不存在", ToastWidget.ERROR)
+            return
+
+        try:
+            import shutil
+            deleted_count = 0
+            
+            # 遍历删除所有内容
+            for item_name in os.listdir(trash_path):
+                item_full_path = os.path.join(trash_path, item_name)
+                if os.path.isdir(item_full_path) and not item_name.startswith('.'):
+                    shutil.rmtree(item_full_path)
+                    deleted_count += 1
+
+            # 清空树节点
+            trash_item.takeChildren()
+
+            # 更新回收站的 has_children 状态
+            editor = JsonEditor()
+            trash_metadata = editor.read_node_infos(trash_path)
+            if trash_metadata and 'node' in trash_metadata:
+                trash_metadata['node']['detail_info']['has_children'] = False
+                editor.writeByData(os.path.join(trash_path, ".metadata.json"), trash_metadata)
+
+            show_toast(self, f"回收站已清空\n共删除 {deleted_count} 个项目", ToastWidget.SUCCESS)
+
+        except Exception as e:
+            show_toast(self, f"清空失败: {str(e)}", ToastWidget.ERROR)
+
+    '''
+    永久删除文件
+    '''
+    def permanent_delete_item(self, item):
+        """永久删除文件，不可恢复"""
+        item_path = item.data(0, Qt.UserRole)
+        if not item_path or not os.path.exists(item_path):
+            show_toast(self, "文件路径不存在", ToastWidget.ERROR)
+            return
+
+        # 二次确认
+        item_name = os.path.basename(item_path)
+        confirm_dialog = QMessageBox(self)
+        confirm_dialog.setIcon(QMessageBox.Warning)
+        confirm_dialog.setWindowTitle("永久删除")
+        confirm_dialog.setText(f"确定要永久删除 \"{item_name}\" 吗？")
+        confirm_dialog.setInformativeText("此操作不可撤销！")
+        confirm_dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm_dialog.setDefaultButton(QMessageBox.No)
+        confirm_dialog.button(QMessageBox.Yes).setText("确定删除")
+        confirm_dialog.button(QMessageBox.No).setText("取消")
+        
+        reply = confirm_dialog.exec()
+        
+        if reply != QMessageBox.Yes:
+            return
+
+        try:
+            import shutil
+            shutil.rmtree(item_path)
+
+            # 从树中移除节点
+            parent_item = item.parent()
+            if parent_item:
+                parent_item.removeChild(item)
+
+                # 更新父节点的 has_children 状态
+                trash_path = parent_item.data(0, Qt.UserRole)
+                if trash_path:
+                    has_children = any(os.path.isdir(os.path.join(trash_path, f)) 
+                                      for f in os.listdir(trash_path) 
+                                      if not f.startswith('.'))
+                    editor = JsonEditor()
+                    parent_metadata = editor.read_node_infos(trash_path)
+                    if parent_metadata and 'node' in parent_metadata:
+                        parent_metadata['node']['detail_info']['has_children'] = has_children
+                        editor.writeByData(os.path.join(trash_path, ".metadata.json"), parent_metadata)
+
+            show_toast(self, f"已永久删除\n{item_name}", ToastWidget.SUCCESS)
+
+        except Exception as e:
+            show_toast(self, f"删除失败: {str(e)}", ToastWidget.ERROR)
+
+    '''
+    恢复文件
+    '''
+    def restore_item(self, item):
+        """从回收站恢复文件"""
+        item_path = item.data(0, Qt.UserRole)
+        if not item_path or not os.path.exists(item_path):
+            show_toast(self, "文件路径不存在", ToastWidget.ERROR)
+            return
+
+        try:
+            # 获取原始路径
+            original_parent_path = self._get_original_path(item)
+            if not original_parent_path:
+                # 如果没有原始路径，恢复到根目录
+                original_parent_path = self.custom_path
+
+            # 检查原始路径是否存在，不存在则恢复到根目录
+            if not os.path.exists(original_parent_path):
+                original_parent_path = self.custom_path
+
+            item_name = os.path.basename(item_path)
+            target_path = os.path.join(original_parent_path, item_name)
+
+            # 如果目标已存在，添加后缀
+            if os.path.exists(target_path):
+                timestamp = int(time.time())
+                item_name_base = os.path.splitext(item_name)[0]
+                item_name_ext = os.path.splitext(item_name)[1]
+                target_path = os.path.join(original_parent_path, f"{item_name_base}_restored{item_name_ext}")
+
+            # 移动文件
+            import shutil
+            shutil.move(item_path, target_path)
+
+            # 清除 original_path 信息
+            editor = JsonEditor()
+            metadata = editor.read_node_infos(target_path)
+            if metadata and 'node' in metadata:
+                if 'original_path' in metadata['node']['detail_info']:
+                    del metadata['node']['detail_info']['original_path']
+                editor.writeByData(os.path.join(target_path, ".metadata.json"), metadata)
+
+            # 从树中移除节点
+            parent_item = item.parent()
+            if parent_item:
+                parent_item.removeChild(item)
+
+                # 更新回收站的 has_children 状态
+                trash_path = parent_item.data(0, Qt.UserRole)
+                if trash_path:
+                    has_children = any(os.path.isdir(os.path.join(trash_path, f)) 
+                                      for f in os.listdir(trash_path) 
+                                      if not f.startswith('.'))
+                    trash_metadata = editor.read_node_infos(trash_path)
+                    if trash_metadata and 'node' in trash_metadata:
+                        trash_metadata['node']['detail_info']['has_children'] = has_children
+                        editor.writeByData(os.path.join(trash_path, ".metadata.json"), trash_metadata)
+
+            # 更新目标父目录的 has_children 状态
+            target_parent_metadata = editor.read_node_infos(original_parent_path)
+            if target_parent_metadata and 'node' in target_parent_metadata:
+                target_parent_metadata['node']['detail_info']['has_children'] = True
+                editor.writeByData(os.path.join(original_parent_path, ".metadata.json"), target_parent_metadata)
+
+            # 刷新树结构
+            self._refresh_tree_for_restore(original_parent_path, target_path)
+
+            # 显示美观的恢复成功弹框
+            self._show_restore_success_dialog(item_name, target_path)
+
+        except Exception as e:
+            show_toast(self, f"恢复失败: {str(e)}", ToastWidget.ERROR)
+
+    '''
+    刷新树结构以显示恢复的文件
+    '''
+    def _refresh_tree_for_restore(self, parent_path, restored_path):
+        """刷新树结构以显示恢复的文件"""
+        # 找到父节点并刷新
+        root = self.tree.topLevelItem(0)
+        if root:
+            self._refresh_tree_node(root, parent_path, restored_path)
+
+    def _refresh_tree_node(self, item, target_parent_path, restored_path):
+        """递归查找并刷新目标节点"""
+        item_path = item.data(0, Qt.UserRole)
+        
+        # 找到目标父节点
+        if item_path == target_parent_path:
+            # 刷新该节点的子节点
+            item.takeChildren()
+            self.populate_tree(item, item_path)
+            item.setExpanded(True)
+            return True
+        
+        # 递归查找
+        for i in range(item.childCount()):
+            child = item.child(i)
+            if self._refresh_tree_node(child, target_parent_path, restored_path):
+                return True
+        return False
+
+    '''
+    显示美观的恢复成功弹框
+    '''
+    def _show_restore_success_dialog(self, file_name, target_path):
+        """显示美观的恢复成功弹框"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("恢复成功")
+        dialog.setFixedSize(400, 180)
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
+        
+        # 设置整体样式
+        dialog.setStyleSheet("""
+            QDialog {
+                background-color: white;
+                border-radius: 12px;
+            }
+            QLabel {
+                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+            }
+            QPushButton {
+                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+            }
+        """)
+        
+        # 主布局
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(12)
+        
+        # 顶部：图标和标题
+        header_layout = QHBoxLayout()
+        
+        # 成功图标
+        icon_label = QLabel()
+        icon_label.setFixedSize(44, 44)
+        icon_label.setText("✓")
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_label.setStyleSheet("""
+            QLabel {
+                background-color: #10B981;
+                color: white;
+                border-radius: 22px;
+                font-size: 22px;
+                font-weight: bold;
+            }
+        """)
+        header_layout.addWidget(icon_label)
+        
+        # 标题区域
+        title_layout = QVBoxLayout()
+        title_layout.setSpacing(4)
+        
+        title_label = QLabel("恢复成功")
+        title_label.setStyleSheet("""
+            QLabel {
+                font-size: 16px;
+                font-weight: bold;
+                color: #1F2937;
+            }
+        """)
+        title_layout.addWidget(title_label)
+        
+        subtitle_label = QLabel(f"{file_name} 已恢复到原位置")
+        subtitle_label.setStyleSheet("""
+            QLabel {
+                font-size: 12px;
+                color: #6B7280;
+            }
+        """)
+        title_layout.addWidget(subtitle_label)
+        header_layout.addLayout(title_layout)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # 路径信息
+        path_container = QLabel(f"📁 {target_path}")
+        path_container.setStyleSheet("""
+            QLabel {
+                background-color: #F3F4F6;
+                border-radius: 6px;
+                padding: 10px 12px;
+                font-size: 11px;
+                color: #4B5563;
+            }
+        """)
+        path_container.setWordWrap(True)
+        layout.addWidget(path_container)
+        
+        # 确定按钮
+        ok_btn = QPushButton("确定")
+        ok_btn.setFixedSize(100, 34)
+        ok_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        ok_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #10B981;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #059669;
+            }
+            QPushButton:pressed {
+                background-color: #047857;
+            }
+        """)
+        ok_btn.clicked.connect(dialog.accept)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        layout.addLayout(btn_layout)
+        
+        # 居中显示
+        main_window = QApplication.activeWindow()
+        if main_window:
+            x = main_window.x() + (main_window.width() - dialog.width()) // 2
+            y = main_window.y() + (main_window.height() - dialog.height()) // 2
+            dialog.move(x, y)
+        
+        dialog.exec()
 
     '''
     创建一个新的文件
@@ -336,6 +993,9 @@ class XPNotebookTree(QWidget):
         if os.path.exists(file_path):
             self.create_file_item(item, index + 1)
             return
+        
+        created_folder = False
+        
         try:
             # 将它的父类改成has_childer true 这个可以在创建的时候是否有子集
             editor = JsonEditor()
@@ -348,7 +1008,9 @@ class XPNotebookTree(QWidget):
             meta_path = os.path.join(dir_path, ".metadata.json")
             editor.writeByData(meta_path,editor_data)
 
-            os.makedirs(file_path, exist_ok=True)
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
             create_metadata_file_under_dir(file_path, content_type = 'file', order_file_num = max_order_num_by_child_dir)
             note_path = os.path.join(file_path, ".note.html")
             with open(note_path, "w", encoding="utf-8") as f:
@@ -359,6 +1021,7 @@ class XPNotebookTree(QWidget):
             new_item.setIcon(0, self.file_icon)
             new_item.setData(0, Qt.UserRole, file_path)
             new_item.setData(0, Qt.UserRole + 1, True)  #  标记“刚创建”
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
             new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
             # new_item.addChild(QTreeWidgetItem())
 
@@ -371,7 +1034,88 @@ class XPNotebookTree(QWidget):
             self.tree.editItem(new_item, 0)
 
         except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                except:
+                    pass
             QMessageBox.critical(self, "创建失败", f"无法创建文件:\n{e}")
+
+    '''
+    创建 Markdown 文件
+    '''
+    def create_markdown_file(self, item, index=0):
+        dir_path = item.data(0, Qt.UserRole)
+        name = '新建文档' if index == 0 else f'新建文档-{index}'
+        file_path = os.path.join(dir_path, name)
+
+        if os.path.exists(file_path):
+            self.create_markdown_file(item, index + 1)
+            return
+        
+        # 先创建临时文件夹名，避免创建失败后留下残留
+        temp_file_path = file_path
+        created_folder = False
+        created_metadata = False
+        created_md = False
+        
+        try:
+            # 将它的父类改成 has_children true
+            editor = JsonEditor()
+            editor_data = editor.read_node_infos(dir_path)
+            editor_data['node']['detail_info']['has_children'] = True
+            # 获取到子类最大的值 排序使用
+            max_order_num_by_child_dir = editor_data['node']['detail_info']['max_order_num_by_child_dir']
+            max_order_num_by_child_dir = max_order_num_by_child_dir + 1
+            editor_data['node']['detail_info']['max_order_num_by_child_dir'] = max_order_num_by_child_dir
+            meta_path = os.path.join(dir_path, ".metadata.json")
+            editor.writeByData(meta_path, editor_data)
+
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
+            # 创建 Markdown 类型的 metadata
+            create_metadata_file_under_dir(file_path, content_type='markdown', order_file_num=max_order_num_by_child_dir)
+            created_metadata = True
+            
+            # 创建空的 Markdown 文件
+            md_path = os.path.join(file_path, "document.md")
+            with open(md_path, "w", encoding="utf-8") as f:
+                f.write(f"# {name}\n\n")
+            created_md = True
+
+            new_item = QTreeWidgetItem()
+            new_item.setText(0, name)
+            # 使用 Markdown 图标
+            markdown_icon = QIcon(QPixmap(":images/markdown.png"))
+            new_item.setIcon(0, markdown_icon)
+            new_item.setData(0, Qt.UserRole, file_path)
+            new_item.setData(0, Qt.UserRole + 1, True)  # 标记"刚创建"
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
+            new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
+
+            item.addChild(new_item)
+            item.setExpanded(True)
+            # 重新排序
+            self.reorder_tree(item, max_order_num_by_child_dir)
+
+            self.tree.setCurrentItem(new_item)
+            self.tree.editItem(new_item, 0)
+            
+            # 发送信号通知主窗口打开 Markdown 编辑器
+            self.open_markdown_editor.emit(file_path)
+
+        except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(temp_file_path):
+                try:
+                    shutil.rmtree(temp_file_path)
+                except:
+                    pass
+            QMessageBox.critical(self, "创建失败", f"无法创建 Markdown 文件:\n{e}")
 
     def change_tag(data):
         data['node']['detail_info']['tag'] = 'new_tag'  # Add a new field
@@ -380,18 +1124,17 @@ class XPNotebookTree(QWidget):
     def update_order(self, parent_item):
         editor = JsonEditor()
         non_trash_items = []
-        trash_item = None
-
         # 收集子节点
         for i in range(parent_item.childCount()):
             child = parent_item.child(i)
             path = child.data(0, Qt.UserRole)
-            metadata = editor.read_node_infos(path)
-            is_trash = metadata['node']['detail_info'].get('title', '')
-            if 'trash' == is_trash:
-                trash_item = child
-            else:
-                non_trash_items.append(child)
+            if path:
+                metadata = editor.read_node_infos(path)
+                is_trash = metadata['node']['detail_info'].get('title', '')
+                if 'trash' == is_trash:
+                    pass
+                else:
+                    non_trash_items.append(child)
 
         # 更新 order 值
         for i, child in enumerate(non_trash_items):
@@ -400,13 +1143,6 @@ class XPNotebookTree(QWidget):
             metadata['node']['detail_info']['order'] = i
             editor.writeByData(os.path.join(path, ".metadata.json"), metadata)
             child.setData(0, Qt.UserRole + 2, i)
-
-        # if trash_item:
-        #     path = trash_item.data(0, Qt.UserRole)
-        #     metadata = editor.read_node_infos(path)
-        #     metadata['node']['detail_info']['order'] = 999999
-        #     editor.writeByData(os.path.join(path, ".metadata.json"), metadata)
-        #     trash_item.setData(0, Qt.UserRole + 2, 999999)
 
         # 重新排序
         self.reorder_tree(parent_item)
@@ -440,6 +1176,8 @@ class XPNotebookTree(QWidget):
             self.create_dir_action(item, index_ + 1)
             return
 
+        created_folder = False
+        
         try:
             # 将它的父类改成has_childer true 这个可以在创建的时候是否有子集
             editor = JsonEditor()
@@ -452,7 +1190,9 @@ class XPNotebookTree(QWidget):
             meta_path = os.path.join(dir_path, ".metadata.json")
             editor.writeByData(meta_path, editor_data)
 
-            os.makedirs(file_path, exist_ok=True)
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
             create_metadata_dir_under_dir(file_path,content_type = 'dir', order_file_num = max_order_num_by_child_dir)
 
             # 不刷新，而是手动插入新节点
@@ -461,6 +1201,7 @@ class XPNotebookTree(QWidget):
             new_item.setIcon(0, self.folder_closed_icon)
             new_item.setData(0, Qt.UserRole, file_path)
             new_item.setData(0, Qt.UserRole + 1, True)  # 标记刚创建
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
             new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
             # new_item.addChild(QTreeWidgetItem())  # 懒加载标记
 
@@ -473,6 +1214,13 @@ class XPNotebookTree(QWidget):
             self.tree.editItem(new_item, 0)
 
         except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                except:
+                    pass
             QMessageBox.critical(self, "创建失败", f"无法创建文件夹:\n{e}")
 
 
@@ -516,6 +1264,12 @@ class XPNotebookTree(QWidget):
     detail_info 就是元数据的详细信息
     '''
     def set_item_icon(self, item, content_type, exps, detail_infos):
+        # Markdown 类型保持自己的图标
+        if content_type == "markdown":
+            markdown_icon = QIcon(QPixmap(":images/markdown.png"))
+            item.setIcon(0, markdown_icon)
+            return
+        
         # 关闭
         if 'collapsed' == exps:
             if content_type == "dir" or content_type == "file":
@@ -557,6 +1311,8 @@ class XPNotebookTree(QWidget):
         if file_path:
             # 获取路径
             base_dir_path = item.data(0, Qt.UserRole)
+            created_folder = False
+            
             try:
                 # 将它的父类改成has_childer true 这个可以在创建的时候是否有子集
                 editor = JsonEditor()
@@ -574,7 +1330,15 @@ class XPNotebookTree(QWidget):
                 # 获取文件名 并且创建这个文件夹
                 file_name = os.path.basename(file_path)
                 target_file_path = os.path.join(base_dir_path, file_name)
-                os.makedirs(target_file_path, exist_ok=True)
+                
+                # 检查是否已存在同名文件夹
+                if os.path.exists(target_file_path):
+                    QMessageBox.warning(self, "创建失败", f"已存在同名文件:\n{file_name}")
+                    return
+                    
+                os.makedirs(target_file_path, exist_ok=False)
+                created_folder = True
+                
                 # # 扩展名（不含点） pdf
                 ext_types = Path(file_path).suffix.lstrip('.')
                 # file_path.suffix 含有标点 .pdf
@@ -588,6 +1352,7 @@ class XPNotebookTree(QWidget):
                 # 这里修改文件路径为新的文件路径这样第一次读取的时候才不会报错
                 new_item.setData(0, Qt.UserRole, target_file_path)
                 new_item.setData(0, Qt.UserRole + 1, True)  # 标记“刚创建”
+                new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
 
                 item.addChild(new_item)
                 item.setExpanded(True)
@@ -597,6 +1362,13 @@ class XPNotebookTree(QWidget):
                 self.tree.editItem(new_item, 0)
 
             except Exception as e:
+                # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+                import shutil
+                if created_folder and os.path.exists(target_file_path):
+                    try:
+                        shutil.rmtree(target_file_path)
+                    except:
+                        pass
                 QMessageBox.critical(self, "创建失败", f"无法创建文件:\n{e}")
 
         else:
@@ -605,75 +1377,268 @@ class XPNotebookTree(QWidget):
 
     '''拖拽的重写函数'''
     def handle_drop(self, dragged_item, parent_item, target_item, drop_pos):
-        try:
-            # 获取父节点路径
-            parent_path = self.custom_path if parent_item is None or parent_item == self.tree.invisibleRootItem() else parent_item.data(0, Qt.UserRole)
-            dragged_path = dragged_item.data(0, Qt.UserRole)
-            dragged_name = os.path.basename(dragged_path)
-            new_path = os.path.join(parent_path, dragged_name)
+        # try:
+        # 获取父节点路径
+        parent_path = self.custom_path if parent_item is None or parent_item == self.tree.invisibleRootItem() else parent_item.data(0, Qt.UserRole)
+        # 拖拽的文件路径
+        dragged_path = dragged_item.data(0, Qt.UserRole)
+        dragged_name = os.path.basename(dragged_path)
+        new_path = os.path.join(parent_path, dragged_name)
 
-            # 防止重名
-            if os.path.exists(new_path):
-                QMessageBox.warning(self, "拖拽失败", "目标路径已存在同名文件/文件夹")
-                return
+        # 防止重名
+        if os.path.exists(new_path):
+            raise ValueError("目标路径已存在同名文件/文件夹")
 
-            # 移动文件/文件夹
-            os.rename(dragged_path, new_path)
+        # 移动文件/文件夹
+        os.rename(dragged_path, new_path)
 
-            # 更新拖拽节点的路径和元数据
-            dragged_item.setData(0, Qt.UserRole, new_path)
-            self._update_child_user_roles(dragged_item, dragged_path, new_path)
+        # 更新拖拽节点的路径和元数据
+        dragged_item.setData(0, Qt.UserRole, new_path)
+        self._update_child_user_roles(dragged_item, dragged_path, new_path)
 
-            editor = JsonEditor()
-            # 更新拖拽节点的 parent_id 和 order
-            dragged_metadata = editor.read_node_infos(new_path)
-            dragged_metadata['node']['detail_info']['parent_id'] = read_parent_id(parent_path)
-            # 分配新的 order 值（使用 max_order_num_by_child_dir + 1）
-            parent_metadata = editor.read_node_infos(parent_path)
-            max_order_num = parent_metadata['node']['detail_info'].get('max_order_num_by_child_dir', 0)
-            dragged_metadata['node']['detail_info']['order'] = max_order_num + 1
-            dragged_item.setData(0, Qt.UserRole + 1, True)  # 标记为新节点
-            dragged_item.setData(0, Qt.UserRole + 2, max_order_num + 1)
-            editor.writeByData(os.path.join(new_path, ".metadata.json"), dragged_metadata)
+        editor = JsonEditor()
+        # 更新拖拽节点的 parent_id 和 order
+        dragged_metadata = editor.read_node_infos(new_path)
+        dragged_metadata['node']['detail_info']['parent_id'] = read_parent_id(parent_path)
+        # 分配新的 order 值（使用 max_order_num_by_child_dir + 1）
+        parent_metadata = editor.read_node_infos(parent_path)
+        max_order_num = parent_metadata['node']['detail_info'].get('max_order_num_by_child_dir', 0)
+        dragged_metadata['node']['detail_info']['order'] = max_order_num + 1
+        dragged_item.setData(0, Qt.UserRole + 1, True)  # 标记为新节点
+        dragged_item.setData(0, Qt.UserRole + 2, max_order_num + 1)
+        editor.writeByData(os.path.join(new_path, ".metadata.json"), dragged_metadata)
 
-            # 更新父节点的 has_children 和 max_order_num_by_child_dir
-            parent_metadata['node']['detail_info']['has_children'] = True
-            parent_metadata['node']['detail_info']['max_order_num_by_child_dir'] = max_order_num + 1
-            editor.writeByData(os.path.join(parent_path, ".metadata.json"), parent_metadata)
+        # 更新父节点的 has_children 和 max_order_num_by_child_dir
+        parent_metadata['node']['detail_info']['has_children'] = True
+        parent_metadata['node']['detail_info']['max_order_num_by_child_dir'] = max_order_num + 1
+        editor.writeByData(os.path.join(parent_path, ".metadata.json"), parent_metadata)
 
-            # 将拖拽节点添加到新父节点
-            if dragged_item.parent():
-                dragged_item.parent().takeChild(dragged_item.parent().indexOfChild(dragged_item))
-            parent_item.addChild(dragged_item)
+        # 将拖拽节点添加到新父节点
+        if dragged_item.parent():
+            dragged_item.parent().takeChild(dragged_item.parent().indexOfChild(dragged_item))
+        parent_item.addChild(dragged_item)
 
-            # 更新 order 值并重新排序
-            self.update_order(parent_item)
-            self.reorder_tree(parent_item)
+        # 检查源文件夹内容是否为空
+        dragget_parent_ = get_parent_path(dragged_path)
+        if dragget_parent_:
+            flag_ = False
+            for item in os.listdir(dragget_parent_):
+                # 检查每个项是否为文件夹
+                if os.path.isdir(os.path.join(dragget_parent_, item)):
+                    flag_ = True
+                    break
+            # 如果存在不存在文件夹 那么就将这个父类设置为没有子类
+            if not flag_:
+                dragged_parent_metadata = editor.read_node_infos(dragget_parent_)
+                dragged_parent_metadata['node']['detail_info']['has_children'] = False
+                editor.writeByData(os.path.join(dragget_parent_, ".metadata.json"), dragged_parent_metadata)
 
-            # 强制刷新树控件
-            self.tree.viewport().update()
+        # 更新 order 值并重新排序
+        self.update_order(parent_item)
+        self.reorder_tree(parent_item)
 
-            # 如果父节点已展开，重新加载子节点
-            # if parent_item.isExpanded():
-            parent_item.takeChildren()
-            self.populate_tree(parent_item, parent_path)
+        # 强制刷新树控件
+        self.tree.viewport().update()
 
-            # 高亮拖拽后的节点
-            self.tree.setCurrentItem(dragged_item)
-            self.tree.scrollToItem(dragged_item)
+        # 如果父节点已展开，重新加载子节点
+        # if parent_item.isExpanded():
+        parent_item.takeChildren()
+        self.populate_tree(parent_item, parent_path)
 
-        except Exception as e:
-            QMessageBox.critical(self, "拖拽失败", f"无法完成拖拽操作:\n{e}")
+        # 高亮拖拽后的节点
+        self.tree.setCurrentItem(dragged_item)
+        self.tree.scrollToItem(dragged_item)
 
-
-
-
-
-
+        # except Exception as e:
+        #     QMessageBox.critical(self, "拖拽失败", f"无法完成拖拽操作:\n{e}")
 
 
 
 
+
+
+
+
+
+
+
+
+# ========================
+# 自定义右键菜单组件
+# 美观的现代风格菜单
+# ========================
+class ModernContextMenu(QWidget):
+    """现代化的右键菜单组件"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        
+        self.actions = []
+        self.hovered_index = -1
+        self.item_height = 44
+        self.min_width = 220
+        
+        # 设置鼠标追踪
+        self.setMouseTracking(True)
+        
+    def add_action(self, icon_text, text, callback, color="#4B5563"):
+        """添加菜单项"""
+        self.actions.append({
+            'icon': icon_text,
+            'text': text,
+            'callback': callback,
+            'color': color,
+            'type': 'action'
+        })
+        
+    def add_separator(self):
+        """添加分隔线"""
+        self.actions.append({'type': 'separator'})
+        
+    def show_menu(self, pos):
+        """显示菜单"""
+        # 计算菜单大小
+        total_height = 20  # 上下边距
+        for action in self.actions:
+            if action['type'] == 'separator':
+                total_height += 14
+            else:
+                total_height += self.item_height
+        
+        self.setFixedSize(self.min_width, total_height)
+        self.move(pos)
+        self.show()
+        
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QFont, QPen, QBrush, QPainterPath, QLinearGradient
+        
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
+        
+        # 绘制阴影背景
+        shadow_path = QPainterPath()
+        shadow_path.addRoundedRect(4, 4, self.width() - 8, self.height() - 8, 16, 16)
+        painter.fillPath(shadow_path, QColor(0, 0, 0, 30))
+        
+        # 绘制渐变背景 - 优雅的浅灰蓝色调
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        gradient.setColorAt(0, QColor("#FAFBFC"))
+        gradient.setColorAt(0.5, QColor("#F5F7FA"))
+        gradient.setColorAt(1, QColor("#EEF2F7"))
+        
+        bg_path = QPainterPath()
+        bg_path.addRoundedRect(0, 0, self.width(), self.height(), 16, 16)
+        painter.fillPath(bg_path, gradient)
+        
+        # 绘制边框 - 柔和的蓝灰色
+        border_pen = QPen(QColor("#D1D5DB"), 1)
+        painter.setPen(border_pen)
+        painter.drawPath(bg_path)
+        
+        # 绘制内发光效果
+        inner_path = QPainterPath()
+        inner_path.addRoundedRect(1, 1, self.width() - 2, self.height() - 2, 15, 15)
+        inner_pen = QPen(QColor(255, 255, 255, 180), 1)
+        painter.setPen(inner_pen)
+        painter.drawPath(inner_path)
+        
+        # 绘制菜单项
+        y = 10
+        for i, action in enumerate(self.actions):
+            if action['type'] == 'separator':
+                # 绘制渐变分隔线
+                gradient_line = QLinearGradient(24, 0, self.width() - 24, 0)
+                gradient_line.setColorAt(0, QColor("#E5E7EB"))
+                gradient_line.setColorAt(0.5, QColor("#D1D5DB"))
+                gradient_line.setColorAt(1, QColor("#E5E7EB"))
+                pen = QPen(gradient_line, 1)
+                painter.setPen(pen)
+                painter.drawLine(24, y + 6, self.width() - 24, y + 6)
+                y += 14
+            else:
+                # 绘制悬停背景 - 柔和的蓝紫色渐变
+                if i == self.hovered_index:
+                    hover_gradient = QLinearGradient(8, y, 8, y + self.item_height - 2)
+                    hover_gradient.setColorAt(0, QColor("#EEF2FF"))
+                    hover_gradient.setColorAt(1, QColor("#E0E7FF"))
+                    hover_path = QPainterPath()
+                    hover_path.addRoundedRect(8, y, self.width() - 16, self.item_height - 2, 10, 10)
+                    painter.fillPath(hover_path, hover_gradient)
+                    
+                    # 悬停边框
+                    hover_border = QPen(QColor("#C7D2FE"), 1)
+                    painter.setPen(hover_border)
+                    painter.drawPath(hover_path)
+                
+                # 绘制图标背景圆圈
+                icon_bg_path = QPainterPath()
+                icon_bg_path.addRoundedRect(16, y + 8, 26, 26, 6, 6)
+                icon_bg_color = QColor(action['color'])
+                icon_bg_color.setAlpha(15)
+                painter.fillPath(icon_bg_path, icon_bg_color)
+                
+                # 绘制图标
+                icon_font = QFont("Segoe UI Emoji", 13)
+                painter.setFont(icon_font)
+                painter.setPen(QColor(action['color']))
+                painter.drawText(20, y + self.item_height - 14, action['icon'])
+                
+                # 绘制文字
+                text_font = QFont("Microsoft YaHei UI", 10)
+                text_font.setWeight(QFont.Medium)
+                painter.setFont(text_font)
+                if i == self.hovered_index:
+                    painter.setPen(QColor("#4F46E5"))
+                else:
+                    painter.setPen(QColor("#374151"))
+                painter.drawText(52, y + self.item_height - 13, action['text'])
+                
+                y += self.item_height
+        
+        painter.end()
+        
+    def mouseMoveEvent(self, event):
+        """鼠标移动事件"""
+        y = 8
+        for i, action in enumerate(self.actions):
+            if action['type'] == 'separator':
+                y += 12
+            else:
+                if y <= event.pos().y() <= y + self.item_height:
+                    if self.hovered_index != i:
+                        self.hovered_index = i
+                        self.update()
+                    return
+                y += self.item_height
+        
+        if self.hovered_index != -1:
+            self.hovered_index = -1
+            self.update()
+            
+    def mousePressEvent(self, event):
+        """鼠标点击事件"""
+        y = 8
+        for i, action in enumerate(self.actions):
+            if action['type'] == 'separator':
+                y += 12
+            else:
+                if y <= event.pos().y() <= y + self.item_height:
+                    self.hide()
+                    if action['callback']:
+                        action['callback']()
+                    return
+                y += self.item_height
+        self.hide()
+        
+    def leaveEvent(self, event):
+        """鼠标离开事件"""
+        self.hovered_index = -1
+        self.update()
 
 
 # ========================
@@ -683,31 +1648,246 @@ class XPNotebookTree(QWidget):
 WINDOWS_MENU_STYLE = """
 QMenu {
     background-color: #ffffff;
-    border: 1px solid #cccccc;
-    padding: 4px;
-    border-radius: 8px;
-    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-    font-size: 10.5pt;
+    border: none;
+    padding: 10px 8px;
+    border-radius: 16px;
+    font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
+    font-size: 14px;
+    font-weight: 400;
 }
 QMenu::item {
-    padding: 6px 30px 6px 30px;
-    margin: 2px 4px;
+    padding: 10px 20px 10px 16px;
+    margin: 3px 4px;
     background-color: transparent;
-    border-radius: 4px;
+    border-radius: 10px;
+    color: #1F2937;
+    letter-spacing: 0.5px;
 }
 QMenu::item:selected {
-    background-color: #e8f0fe;
-    color: #000000;
+    background-color: #EEF2FF;
+    color: #4F46E5;
+}
+QMenu::item:disabled {
+    color: #9CA3AF;
 }
 QMenu::separator {
     height: 1px;
-    background: #e0e0e0;
-    margin: 4px 10px 4px 10px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+        stop:0 rgba(229, 231, 235, 0), 
+        stop:0.2 rgba(229, 231, 235, 1), 
+        stop:0.8 rgba(229, 231, 235, 1), 
+        stop:1 rgba(229, 231, 235, 0));
+    margin: 8px 16px 8px 16px;
 }
 QMenu::icon {
-    padding-left: 6px;
+    padding-left: 4px;
+    padding-right: 10px;
+}
+QMenu::indicator {
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
 }
 """
+
+
+# ========================
+# Toast 通知组件
+# 美观的消息提示弹框
+# ========================
+class ToastWidget(QWidget):
+    """美观的 Toast 通知组件"""
+    
+    # 定义类型常量
+    SUCCESS = "success"
+    WARNING = "warning"  
+    ERROR = "error"
+    INFO = "info"
+    
+    def __init__(self, message, toast_type="success", parent=None, duration=2000):
+        super().__init__(parent)
+        self.duration = duration
+        self.toast_type = toast_type
+        
+        # 设置窗口属性
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        
+        # 设置固定宽度
+        self.setFixedWidth(320)
+        self.setMinimumHeight(60)
+        
+        # 创建布局
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+        
+        # 创建内容容器
+        content_widget = QWidget()
+        content_layout = QHBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(12)
+        
+        # 图标标签
+        self.icon_label = QLabel()
+        self.icon_label.setFixedSize(24, 24)
+        self.icon_label.setAlignment(Qt.AlignCenter)
+        content_layout.addWidget(self.icon_label)
+        
+        # 消息标签
+        self.message_label = QLabel(message)
+        self.message_label.setWordWrap(True)
+        self.message_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        content_layout.addWidget(self.message_label, 1)
+        
+        layout.addWidget(content_widget)
+        
+        # 设置样式和图标
+        self._setup_style()
+        
+        # 添加阴影效果
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(20)
+        shadow.setColor(QColor(0, 0, 0, 60))
+        shadow.setOffset(0, 4)
+        self.setGraphicsEffect(shadow)
+        
+        # 透明度动画
+        self.opacity_effect = QGraphicsOpacityEffect()
+        self.setGraphicsEffect(self.opacity_effect)
+        self.opacity_effect.setOpacity(0.0)
+        
+        # 动画
+        self.fade_in_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_in_animation.setDuration(200)
+        self.fade_in_animation.setStartValue(0.0)
+        self.fade_in_animation.setEndValue(1.0)
+        self.fade_in_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        
+        self.fade_out_animation = QPropertyAnimation(self.opacity_effect, b"opacity")
+        self.fade_out_animation.setDuration(200)
+        self.fade_out_animation.setStartValue(1.0)
+        self.fade_out_animation.setEndValue(0.0)
+        self.fade_out_animation.setEasingCurve(QEasingCurve.InOutQuad)
+        self.fade_out_animation.finished.connect(self.close)
+        
+        # 自动关闭定时器
+        self.close_timer = QTimer()
+        self.close_timer.setSingleShot(True)
+        self.close_timer.timeout.connect(self._start_fade_out)
+    
+    def _setup_style(self):
+        """设置样式"""
+        styles = {
+            "success": {
+                "bg": "#10B981",
+                "text": "#FFFFFF",
+                "icon": "✓"
+            },
+            "warning": {
+                "bg": "#F59E0B", 
+                "text": "#FFFFFF",
+                "icon": "⚠"
+            },
+            "error": {
+                "bg": "#EF4444",
+                "text": "#FFFFFF", 
+                "icon": "✕"
+            },
+            "info": {
+                "bg": "#3B82F6",
+                "text": "#FFFFFF",
+                "icon": "ℹ"
+            }
+        }
+        
+        style = styles.get(self.toast_type, styles["success"])
+        
+        # 设置背景样式
+        self.setStyleSheet(f"""
+            QWidget {{
+                background-color: transparent;
+            }}
+            QLabel {{
+                background-color: transparent;
+            }}
+        """)
+        
+        # 设置内容容器样式
+        content_widget = self.findChild(QWidget)
+        if content_widget:
+            content_widget.setStyleSheet(f"""
+                QWidget {{
+                    background-color: {style['bg']};
+                    border-radius: 12px;
+                }}
+            """)
+        
+        # 设置图标
+        self.icon_label.setText(style['icon'])
+        self.icon_label.setStyleSheet(f"""
+            QLabel {{
+                background-color: rgba(255, 255, 255, 0.2);
+                border-radius: 12px;
+                color: {style['text']};
+                font-size: 14px;
+                font-weight: bold;
+            }}
+        """)
+        
+        # 设置消息文本
+        self.message_label.setStyleSheet(f"""
+            QLabel {{
+                color: {style['text']};
+                font-size: 13px;
+                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
+                background-color: transparent;
+            }}
+        """)
+    
+    def show_toast(self):
+        """显示 Toast"""
+        # 调整大小
+        self.adjustSize()
+        
+        # 获取主窗口
+        main_window = QApplication.activeWindow()
+        if main_window:
+            # 在主窗口右下角显示
+            main_window_rect = main_window.geometry()
+            x = main_window_rect.x() + main_window_rect.width() - self.width() - 20
+            y = main_window_rect.y() + main_window_rect.height() - self.height() - 50
+        else:
+            # 备用：屏幕右下角
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_rect = screen.availableGeometry()
+                x = screen_rect.width() - self.width() - 20
+                y = screen_rect.height() - self.height() - 80
+            else:
+                x = 100
+                y = 100
+        
+        self.move(x, y)
+        self.show()
+        
+        # 开始淡入动画
+        self.fade_in_animation.start()
+        
+        # 启动自动关闭定时器
+        self.close_timer.start(self.duration)
+    
+    def _start_fade_out(self):
+        """开始淡出动画"""
+        self.fade_out_animation.start()
+
+
+def show_toast(parent, message, toast_type="success", duration=2000):
+    """显示 Toast 通知的便捷函数"""
+    toast = ToastWidget(message, toast_type, parent, duration)
+    toast.show_toast()
+    return toast
 
 def main():
     app = QApplication(sys.argv)

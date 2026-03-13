@@ -2,7 +2,7 @@
 import os
 import sqlite3
 
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QKeySequence
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QMenu
 import uuid
 import time
@@ -38,11 +38,12 @@ class FileActions:
     '''
     def create_file_action(self):
         action = QAction(
-            QIcon(":/images/blue-folder-open-document.png"),
+            QIcon(":/images/book-close.png"),
             "创建笔记",
             self.parent
         )
         action.setStatusTip("创建一个新笔记")
+        action.setShortcut(QKeySequence.StandardKey.New)
         action.triggered.connect(self.create_file)
         return action
 
@@ -51,11 +52,12 @@ class FileActions:
     '''
     def open_notebook_action(self):
         action = QAction(
-            QIcon(":/images/blue-folder-open-document.png"),
+            QIcon(":/images/book-open.png"),
             "打开笔记",
             self.parent
         )
         action.setStatusTip("打开笔记")
+        action.setShortcut(QKeySequence.StandardKey.Open)
         action.triggered.connect(self.open_folder)
         return action
 
@@ -65,50 +67,61 @@ class FileActions:
         """
         返回一个 QAction，但能弹出最近文件的 QMenu
         """
-        # 创建“打开最近笔记”的 QAction
+        from PySide6.QtGui import QKeySequence
+            
+        # 创建"打开最近笔记"的 QAction
         action = QAction(
-            QIcon(":/images/blue-folder-open-document.png"),
+            QIcon(":/images/arrow-curve-180-left.png"),
             "打开最近笔记",
             self.parent
         )
-
+    
         # 设置状态提示
         action.setStatusTip("打开最近笔记")
-
+    
         # 创建子菜单（即最近文件路径列表）
         recent_menu = QMenu(self.parent)
-
+    
         # 加载最近的笔记本
         self.note_db = NoteDB("recent_notebooks.db")
         recent_paths = self.note_db.get_recent_notebooks(15)
         recent_menu.setStyleSheet("""
             QMenu {
                 background-color: #ffffff;
-                color: #000000;
-                border: 1px solid #cccccc;
-                border-radius: 8px;  /* 设置圆角半径 */
-                padding: 4px;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                padding: 6px;
+                font-size: 14px;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
             }
-
             QMenu::item {
-                padding: 6px 24px;
-                background-color: transparent;
-                border-radius: 4px;  /* 给 item 也加圆角，避免选中时遮住菜单圆角 */
+                padding: 8px 32px 8px 12px;
+                border-radius: 6px;
+                color: #334155;
+                margin: 2px 4px;
             }
-
             QMenu::item:selected {
-                background-color: #cce8ff;  /* 浅蓝色，模拟 Win10 的悬浮 */
-                border-radius: 4px;
+                background-color: #EFF6FF;
+                color: #2563EB;
+            }
+            QMenu::icon {
+                padding-left: 8px;
+                margin-left: 0px;
             }
         """)
-
+    
         for idx, path in enumerate(recent_paths, start=1):
-            sub_action = QAction(f"{idx}. {path}", self.parent)
+            # 截取路径显示，避免太长
+            display_path = path
+            if len(path) > 50:
+                display_path = "..." + path[-47:]
+            sub_action = QAction(QIcon(":/images/notes.png"), f"{display_path}", self.parent)
             sub_action.setData(path)
+            sub_action.setToolTip(path)  # 完整路径作为提示
             sub_action.triggered.connect(lambda checked=False, p=path: self.open_recent_notebook_path(p))
             recent_menu.addAction(sub_action)
-
-
+    
+    
         # 关键：将 menu 设置给这个 QAction，点击后就能弹出子菜单
         action.setMenu(recent_menu)
         return action

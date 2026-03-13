@@ -39,9 +39,14 @@ def create_metadata_file_under_dir(file_path , content_type = 'file', order_file
     parent_id = read_parent_id(file_path)
     data['node']['detail_info']['parent_id'] = parent_id
     # 打开的文件icon
-    data['node']['detail_info']['open_dir_icon'] = ':images/note-violet.png'
-    # 关闭的文件icon
-    data['node']['detail_info']['close_dir_icon'] = ':images/note-violet.png'
+    if content_type == 'markdown':
+        data['node']['detail_info']['open_dir_icon'] = ':images/markdown.png'
+        # 关闭的文件icon
+        data['node']['detail_info']['close_dir_icon'] = ':images/markdown.png'
+    else:
+        data['node']['detail_info']['open_dir_icon'] = ':images/note-violet.png'
+        # 关闭的文件icon
+        data['node']['detail_info']['close_dir_icon'] = ':images/note-violet.png'
     # 根据父类的文件名字顺序的大小来定义这个文件的顺序
     data['node']['detail_info']['max_order_num_by_child_dir'] = 0
     # 当前文件的排序

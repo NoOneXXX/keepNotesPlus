@@ -13,3 +13,8 @@ pyside6-uic pyside6-mainwindow.ui -o ui_main_window.py
 ```shell
 pyside6-rcc gui/ui/resource.qrc -o gui/ui/resource_rc.py
 ```
+
+## 上面两步执行完成后就直接的执行下面命令打包
+```shell
+python build.py
+```

@@ -1,5 +1,7 @@
 import os
 import sys
+import traceback
+from datetime import datetime
 
 # 辅助函数：获取资源文件路径（兼容开发环境和 Nuitka 打包环境）
 def get_resource_path(relative_path):
@@ -13,15 +15,65 @@ def get_resource_path(relative_path):
         base_path = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(base_path, relative_path)
 
-from PySide6.QtWebEngineCore import QWebEngineSettings
-from PySide6.QtWebEngineWidgets import QWebEngineView
+# 启动日志函数 - 用于捕获打包后的启动错误
+def write_startup_log(message, level="INFO"):
+    """写入启动日志到文件"""
+    try:
+        log_dir = get_resource_path("logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "startup.log")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(f"[{timestamp}] [{level}] {message}\n")
+    except Exception as e:
+        pass  # 忽略日志写入错误
 
-from gui.func.utils.json_utils import JsonEditor
-from gui.func.utils.read_pdf_epud_txt_word_type.read_pdf import PDFPreviewer
-from gui.func.utils.read_pdf_epud_txt_word_type.read_docx import read_word
-# Import the resource file to register the resources
-# 这个文件的引用不能删除 否则下面的图片就会找不到文件
-from gui.ui import resource_rc
+def log_exception(exc_type, exc_value, exc_traceback):
+    """全局异常处理器"""
+    error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    write_startup_log(error_msg, "ERROR")
+    # 显示错误对话框
+    try:
+        from PySide6.QtWidgets import QApplication, QMessageBox
+        if QApplication.instance():
+            QMessageBox.critical(None, "启动错误", f"程序启动失败:\n{str(exc_value)}\n\n详细信息请查看 logs/startup.log")
+    except:
+        pass
+
+# 设置全局异常处理器
+sys.excepthook = log_exception
+
+write_startup_log("=== 程序启动 ===")
+write_startup_log(f"Python 版本: {sys.version}")
+write_startup_log(f"工作目录: {os.getcwd()}")
+write_startup_log(f"sys.executable: {sys.executable}")
+write_startup_log(f"sys.frozen: {getattr(sys, 'frozen', False)}")
+
+try:
+    from PySide6.QtWebEngineCore import QWebEngineSettings
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    write_startup_log("PySide6 QtWebEngine 导入成功")
+except Exception as e:
+    write_startup_log(f"PySide6 QtWebEngine 导入失败: {e}", "ERROR")
+    raise
+
+try:
+    from gui.func.utils.json_utils import JsonEditor
+    from gui.func.utils.read_pdf_epud_txt_word_type.read_pdf import PDFPreviewer
+    from gui.func.utils.read_pdf_epud_txt_word_type.read_docx import read_word
+    write_startup_log("工具模块导入成功")
+except Exception as e:
+    write_startup_log(f"工具模块导入失败: {e}", "ERROR")
+    raise
+
+try:
+    # Import the resource file to register the resources
+    # 这个文件的引用不能删除 否则下面的图片就会找不到文件
+    from gui.ui import resource_rc
+    write_startup_log("Qt资源文件导入成功")
+except Exception as e:
+    write_startup_log(f"Qt资源文件导入失败: {e}", "ERROR")
+    raise
 
 from PySide6.QtCore import QSize, Qt, QtMsgType, qInstallMessageHandler, Slot, QUrl, QTimer
 from PySide6.QtGui import QAction, QActionGroup, QFont, QIcon, QKeySequence, QTextCharFormat, QTextDocument, QImage
@@ -852,20 +904,44 @@ class MainWindow(QMainWindow):
 
 if __name__ == "__main__":
     try:
+        write_startup_log("开始创建 QApplication")
         app = QApplication(sys.argv)
         app.setApplicationName("Megasolid Idiom")
         qInstallMessageHandler(qt_message_handler)
-        # 增加全局样式 虽然不是很成功 先放着 后面慢慢的调试
+        write_startup_log("QApplication 创建成功")
+        
+        # 增加全局样式
         qss_path = get_resource_path("gui/ui/qss/light.qss")
+        write_startup_log(f"样式文件路径: {qss_path}")
         if os.path.exists(qss_path):
             with open(qss_path, "r", encoding="utf-8") as f:
                 app.setStyleSheet(f.read())
+            write_startup_log("样式文件加载成功")
         else:
-            print(f"警告: 找不到样式文件 {qss_path}")
+            write_startup_log(f"警告: 找不到样式文件 {qss_path}", "WARN")
 
+        write_startup_log("开始创建主窗口")
         window = MainWindow()
-        logger.info(f'已经启动成功======')
+        write_startup_log("主窗口创建成功")
+        
+        try:
+            logger.info(f'已经启动成功======')
+        except:
+            pass
+        
         window.show()
+        write_startup_log("窗口显示完成，进入主循环")
         sys.exit(app.exec())
     except Exception as e:
-        logger.error(f'main的启动报错信息是:{e}')
+        error_msg = f"主程序启动失败: {e}\n{traceback.format_exc()}"
+        write_startup_log(error_msg, "ERROR")
+        try:
+            logger.error(f'main的启动报错信息是:{e}')
+        except:
+            pass
+        # 显示错误对话框
+        try:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.critical(None, "启动错误", f"程序启动失败:\n{str(e)}\n\n详细信息请查看 logs/startup.log")
+        except:
+            pass

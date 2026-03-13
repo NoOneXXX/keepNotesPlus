@@ -25,7 +25,14 @@ class PDFPreviewer:
         self.viewer_html = os.path.join(self.viewer_dir, "viewer.html")
 
         self.pdf_output_dir = os.path.join(base_dir, "pdfjs", "pdfs")
+        # 确保pdfs目录存在
         os.makedirs(self.pdf_output_dir, exist_ok=True)
+        
+        # 调试日志
+        print(f"[PDFPreviewer] base_dir: {base_dir}")
+        print(f"[PDFPreviewer] viewer_html: {self.viewer_html}")
+        print(f"[PDFPreviewer] pdf_output_dir: {self.pdf_output_dir}")
+        print(f"[PDFPreviewer] viewer_html exists: {os.path.exists(self.viewer_html)}")
 
 
     def get_webview(self, pdf_file_path: str) -> QWebEngineView:

@@ -1,6 +1,7 @@
 import os
 import sys
 import traceback
+import time
 from datetime import datetime
 
 # 辅助函数：获取资源文件路径（兼容开发环境和 Nuitka 打包环境）
@@ -549,6 +550,9 @@ class MainWindow(QMainWindow):
 
         self.update_format()
         self.update_title()
+        
+        # 标记窗口已完成初始化，用于控制 resizeEvent 的行为
+        self._window_initialized = True
 
     def block_signals(self, objects, b):
         for o in objects:
@@ -593,6 +597,9 @@ class MainWindow(QMainWindow):
             self.rich_text_editor.clean_base64_images()
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(self.rich_text_editor.toHtml())
+            
+            # 更新元数据中的修改时间
+            self._update_modified_time(self.richtext_saved_path)
 
 
 
@@ -785,8 +792,11 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         """Maintain splitter sizes on resize."""
         super().resizeEvent(event)
-        self.ui.splitter.setSizes([300, self.width() - 300])
-        self.ui.verticalSplitter.setSizes([215, self.height() - 215])
+        # 只在窗口初始化完成后且可见时调整 splitter，避免启动时闪烁
+        # 使用标志位确保只在用户手动调整大小时响应，而非初始化时
+        if hasattr(self, '_window_initialized') and self.isVisible():
+            self.ui.splitter.setSizes([300, self.width() - 300])
+            self.ui.verticalSplitter.setSizes([215, self.height() - 215])
     '''
     富文本框的路径接收
     第一个参数判断路径 第二个参数判断树状图的属性 是属于谁的
@@ -886,7 +896,29 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'markdown_editor') and self.markdown_editor:
             # 使用编辑器当前的文件路径保存
             self.markdown_editor.save_file()
+            
+            # 更新元数据中的修改时间
+            if self.markdown_editor.md_file_path:
+                # md 文件在子目录下，需要获取父目录作为笔记路径
+                note_path = os.path.dirname(self.markdown_editor.md_file_path)
+                self._update_modified_time(note_path)
+            
             self.status.showMessage("已自动保存", 2000)
+    
+    def _update_modified_time(self, note_path):
+        """更新笔记元数据中的修改时间"""
+        if not note_path:
+            return
+        try:
+            editor = JsonEditor()
+            meta_path = os.path.join(note_path, ".metadata.json")
+            if os.path.exists(meta_path):
+                metadata = editor.read_node_infos(note_path)
+                if metadata and isinstance(metadata, dict):
+                    metadata['node']['detail_info']['updated_time'] = int(time.time())
+                    editor.writeByData(meta_path, metadata)
+        except Exception as e:
+            pass  # 忽略更新时间错误
 
     def open_settings(self):
         """打开设置对话框"""
@@ -928,6 +960,18 @@ if __name__ == "__main__":
             logger.info(f'已经启动成功======')
         except:
             pass
+        
+        # 先设置窗口大小和位置，再显示窗口，避免闪烁
+        window.resize(1079, 873)
+        window.setGeometry(
+            QApplication.primaryScreen().availableGeometry().width() // 2 - 540,
+            QApplication.primaryScreen().availableGeometry().height() // 2 - 437,
+            1079, 873
+        )
+        
+        # 初始化 splitter 大小，避免显示后再调整导致闪烁
+        window.ui.splitter.setSizes([300, 779])
+        window.ui.verticalSplitter.setSizes([215, 658])
         
         window.show()
         write_startup_log("窗口显示完成，进入主循环")

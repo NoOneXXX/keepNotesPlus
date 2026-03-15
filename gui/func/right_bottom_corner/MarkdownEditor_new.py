@@ -13,7 +13,9 @@ Markdown 编辑器组件
 """
 
 import os
+import re
 import time
+import json
 import shutil
 
 from PySide6.QtWidgets import (
@@ -27,30 +29,12 @@ from PySide6.QtGui import (
     QSyntaxHighlighter
 )
 from PySide6.QtCore import (
-    QUrl, Qt, Signal, QRegularExpression, QTimer, QObject, Slot
+    QMimeData, QUrl, Qt, Signal, QRegularExpression, QTimer
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWebChannel import QWebChannel
 
 from gui.func.utils import logger
 from gui.func.utils.markdown_renderer import render_markdown
-
-
-class CopyHandler(QObject):
-    """处理 WebView 中的复制操作"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-    
-    @Slot(str)
-    def copyText(self, text):
-        """复制文本到剪贴板"""
-        try:
-            clipboard = QApplication.clipboard()
-            clipboard.setText(text)
-            print(f"[CopyHandler] 已复制 {len(text)} 字符到剪贴板")
-        except Exception as e:
-            logger.error(f"复制失败: {e}")
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
@@ -181,16 +165,16 @@ class MarkdownEditor(QWidget):
         toolbar_layout.setSpacing(8)
         
         # 模式切换按钮
-        self.edit_btn = QPushButton("编辑")
+        self.edit_btn = QPushButton("✏ 编辑")
         self.edit_btn.setCheckable(True)
         self.edit_btn.setChecked(True)
         self.edit_btn.setStyleSheet(self._get_toolbar_btn_style(True))
         
-        self.preview_btn = QPushButton("预览")
+        self.preview_btn = QPushButton("👁 预览")
         self.preview_btn.setCheckable(True)
         self.preview_btn.setStyleSheet(self._get_toolbar_btn_style(False))
         
-        self.split_btn = QPushButton("分屏")
+        self.split_btn = QPushButton("◫ 分屏")
         self.split_btn.setCheckable(True)
         self.split_btn.setStyleSheet(self._get_toolbar_btn_style(False))
         
@@ -244,11 +228,9 @@ class MarkdownEditor(QWidget):
         self.preview.setStyleSheet("""
             QWebEngineView {
                 border: none;
-                background-color: #1e1e2e;
+                background-color: #FFFFFF;
             }
         """)
-        # 设置 QWebChannel 支持复制功能
-        self._setup_web_channel(self.preview)
         QTimer.singleShot(0, lambda: self.preview.setHtml("<html><body style='background-color:#1e1e2e;'></body></html>"))
         
         # 分屏模式
@@ -276,11 +258,9 @@ class MarkdownEditor(QWidget):
         self.split_preview.setStyleSheet("""
             QWebEngineView {
                 border: none;
-                background-color: #1e1e2e;
+                background-color: #FFFFFF;
             }
         """)
-        # 设置 QWebChannel 支持复制功能
-        self._setup_web_channel(self.split_preview)
         QTimer.singleShot(0, lambda: self.split_preview.setHtml("<html><body style='background-color:#1e1e2e;'></body></html>"))
         
         # 分屏容器
@@ -307,13 +287,6 @@ class MarkdownEditor(QWidget):
         # 设置默认模式
         self._set_mode("edit", update_preview=False)
         
-    def _setup_web_channel(self, webview):
-        """为 QWebEngineView 设置 QWebChannel，支持复制功能"""
-        channel = QWebChannel(self)
-        copy_handler = CopyHandler(self)
-        channel.registerObject("copyHandler", copy_handler)
-        webview.page().setWebChannel(channel)
-    
     def _get_toolbar_btn_style(self, active):
         """获取工具栏按钮样式"""
         if active:
@@ -573,60 +546,24 @@ class MarkdownEditor(QWidget):
         self._preview_update_timer.start(100)
     
     def _do_update_split_preview(self):
-        """实际执行分屏预览更新，保持滚动位置"""
+        """实际执行分屏预览更新"""
         md_content = self.split_editor.toPlainText()
-        html_content = render_markdown(md_content, dark_mode=False)
-        
-        # 获取当前滚动位置（使用 JavaScript）
-        self.split_preview.page().runJavaScript("window.pageYOffset || document.documentElement.scrollTop;", 
-            lambda scroll_y: self._update_preview_with_scroll(md_content, html_content, scroll_y or 0))
-    
-    def _update_preview_with_scroll(self, md_content, html_content, scroll_y):
-        """更新预览并恢复滚动位置，使用JS更新避免闪烁"""
-        # 提取 body 内容用于 JS 更新
-        import re
-        body_match = re.search(r'<body[^>]*>(.*?)</body>', html_content, re.DOTALL)
-        if body_match:
-            body_content = body_match.group(1).strip()
-        else:
-            body_content = html_content
-        
-        # 转义用于 JavaScript 字符串
-        body_content = body_content.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n')
+        html_content = render_markdown(md_content, dark_mode=True)
         
         if not self._split_preview_initialized:
-            # 首次加载使用 setHtml
-            # 设置 base URL 为项目根目录，使本地 JS/CSS 资源可以加载
-            from gui.func.utils.markdown_renderer import PROJECT_ROOT
-            base_url = QUrl.fromLocalFile(PROJECT_ROOT + '/')
-            self.split_preview.setHtml(html_content, base_url)
+            if self.md_file_path:
+                base_url = QUrl.fromLocalFile(os.path.dirname(self.md_file_path) + '/')
+                self.split_preview.setHtml(html_content, base_url)
+            else:
+                self.split_preview.setHtml(html_content)
             self._split_preview_initialized = True
         else:
-            # 使用 JavaScript 更新内容，避免闪烁
-            js_code = f"""
-                document.querySelector('article.markdown-body').innerHTML = '{body_content}';
-                if (typeof renderMathInElement !== 'undefined') {{
-                    renderMathInElement(document.body, {{
-                        delimiters: [
-                            {{left: '$$', right: '$$', display: true}},
-                            {{left: '$', right: '$', display: false}}
-                        ],
-                        throwOnError: false
-                    }});
-                }}
-                if (typeof mermaid !== 'undefined') {{
-                    mermaid.init(undefined, document.querySelectorAll('.mermaid'));
-                }}
-            """
-            self.split_preview.page().runJavaScript(js_code)
-        
-        # 延迟恢复滚动位置
-        def restore_scroll():
-            if scroll_y and scroll_y > 0:
-                self.split_preview.page().runJavaScript(f"window.scrollTo(0, {scroll_y});")
-        
-        from PySide6.QtCore import QTimer
-        QTimer.singleShot(30, restore_scroll)
+            # 更新内容区域
+            html_body = render_markdown(md_content, dark_mode=True)
+            # 使用 JavaScript 更新
+            self.split_preview.page().runJavaScript(
+                f"document.body.innerHTML = {json.dumps(html_body, ensure_ascii=False)};"
+            )
     
     def _set_mode(self, mode, update_preview=True):
         """设置显示模式"""
@@ -657,55 +594,19 @@ class MarkdownEditor(QWidget):
     def _on_content_changed(self):
         """内容变化时触发"""
         self.content_changed.emit()
-        # 如果在分屏模式，实时更新分屏预览
         if self.content_stack.currentIndex() == 2:
-            self._update_split_preview()
+            self._update_preview()
             
     def _update_preview(self):
         """更新预览内容"""
         md_content = self.editor.toPlainText()
-        html_content = render_markdown(md_content, dark_mode=False)
+        html_content = render_markdown(md_content, dark_mode=True)
         
-        # 设置 base URL 为项目根目录，使本地 JS/CSS 资源可以加载
-        from gui.func.utils.markdown_renderer import PROJECT_ROOT
-        base_url = QUrl.fromLocalFile(PROJECT_ROOT + '/')
-        self.preview.setHtml(html_content, base_url)
-        
-        # 延迟执行 KaTeX 和 Mermaid 渲染（确保脚本已加载）
-        def render_math_and_mermaid():
-            js_code = """
-                console.log('Python triggered render');
-                if (typeof renderMathInElement !== 'undefined') {
-                    console.log('KaTeX available, rendering...');
-                    renderMathInElement(document.body, {
-                        delimiters: [
-                            {left: '$$', right: '$$', display: true},
-                            {left: '$', right: '$', display: false}
-                        ],
-                        throwOnError: false
-                    });
-                } else {
-                    console.log('KaTeX not available');
-                }
-                if (typeof mermaid !== 'undefined') {
-                    console.log('Mermaid available, rendering...');
-                    mermaid.initialize({startOnLoad: false, securityLevel: 'loose'});
-                    try {
-                        mermaid.run({querySelector: '.mermaid'});
-                    } catch (e) {
-                        console.error('Mermaid run failed:', e);
-                        mermaid.init(undefined, document.querySelectorAll('.mermaid'));
-                    }
-                } else {
-                    console.log('Mermaid not available');
-                }
-            """
-            self.preview.page().runJavaScript(js_code)
-        
-        # 多次尝试渲染
-        from PySide6.QtCore import QTimer
-        for delay in [500, 1500, 3000]:
-            QTimer.singleShot(delay, render_math_and_mermaid)
+        if self.md_file_path:
+            base_url = QUrl.fromLocalFile(os.path.dirname(self.md_file_path) + '/')
+            self.preview.setHtml(html_content, base_url)
+        else:
+            self.preview.setHtml(html_content)
         
     def set_file_path(self, file_path):
         """设置文件路径"""

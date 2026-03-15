@@ -102,6 +102,7 @@ from gui.func.left.XPNotebookTree import XPNotebookTree
 from gui.func.right_top_corner.XPTreeRightTop import XPTreeRightTop
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
 from gui.func.right_bottom_corner.MarkdownEditor import MarkdownEditor
+from gui.func.right_bottom_corner.MindMapEditor import MindMapEditor
 from gui.func.top_menu.file_action import FileActions
 from gui.func.settings.settings_page import SettingsDialog
 from gui.func.singel_pkg.single_manager import sm
@@ -184,10 +185,16 @@ class MainWindow(QMainWindow):
         self.markdown_editor = MarkdownEditor(self)
         self.markdown_editor.hide()
 
+        # 预创建思维导图编辑器
+        self.mindmap_editor = MindMapEditor(self)
+        self.mindmap_editor.hide()
+        self.mindmap_editor.content_changed.connect(self.auto_save_mindmap)
+
         # 使用堆叠窗口管理多个编辑器
         self.editor_stack = QStackedWidget()
         self.editor_stack.addWidget(self.rich_text_editor)  # 索引 0
         self.editor_stack.addWidget(self.markdown_editor)   # 索引 1
+        self.editor_stack.addWidget(self.mindmap_editor)    # 索引 2
 
         # Add editor stack to noteContentTable
         self.ui.noteContentTable.setCellWidget(0, 0, self.editor_stack)
@@ -552,7 +559,8 @@ class MainWindow(QMainWindow):
         self.update_title()
         
         # 标记窗口已完成初始化，用于控制 resizeEvent 的行为
-        self._window_initialized = True
+        # 注意：此标志在 show() 之后才设置为 True，避免初始化期间的 resize 事件导致闪烁
+        self._window_initialized = False
 
     def block_signals(self, objects, b):
         for o in objects:
@@ -771,6 +779,8 @@ class MainWindow(QMainWindow):
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
         # 连接 Markdown 编辑器信号
         tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
+        # 连接思维导图编辑器信号
+        tree_widget.open_mindmap_editor.connect(self.open_mindmap_editor)
 
         self.ui.verticalLayout.addWidget(tree_widget)
 
@@ -813,6 +823,8 @@ class MainWindow(QMainWindow):
             tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  #  设置扩展策略
             # 连接 Markdown 编辑器信号
             tree.open_markdown_editor.connect(self.open_markdown_editor)
+            # 连接思维导图编辑器信号
+            tree.open_mindmap_editor.connect(self.open_mindmap_editor)
             self.layout.addWidget(tree)
 
     # 动态的加载pdf
@@ -904,6 +916,62 @@ class MainWindow(QMainWindow):
                 self._update_modified_time(note_path)
             
             self.status.showMessage("已自动保存", 2000)
+
+    @Slot(str)
+    def open_mindmap_editor(self, file_path):
+        """打开思维导图编辑器"""
+        print(f"[MainWindow] open_mindmap_editor called with: {file_path}")
+        
+        # 获取思维导图文件路径
+        mindmap_path = os.path.join(file_path, "mindmap.json")
+        print(f"[MainWindow] mindmap_path: {mindmap_path}, exists: {os.path.exists(mindmap_path)}")
+        
+        # 如果已经在思维导图编辑器，直接加载文件
+        if self.current_editor_type == "mindmap":
+            self.mindmap_editor.set_file_path(mindmap_path)
+            if os.path.exists(mindmap_path):
+                self.mindmap_editor.load_file(mindmap_path)
+            else:
+                # 文件不存在，初始化新思维导图
+                self.mindmap_editor.ensure_initialized()
+            self.path = mindmap_path
+            self.update_title()
+            return
+        
+        # 切换到思维导图编辑器
+        self.mindmap_editor.set_file_path(mindmap_path)
+        if os.path.exists(mindmap_path):
+            print(f"[MainWindow] Loading existing mindmap file")
+            self.mindmap_editor.load_file(mindmap_path)
+        else:
+            print(f"[MainWindow] No existing mindmap file, initializing new one")
+            # 文件不存在，初始化新思维导图
+            self.mindmap_editor.ensure_initialized()
+        
+        # 切换堆叠窗口索引
+        self.editor_stack.setCurrentIndex(2)
+        self.current_editor = self.mindmap_editor
+        self.current_editor_type = "mindmap"
+        
+        # 更新标题
+        self.path = mindmap_path
+        self.update_title()
+    
+    def auto_save_mindmap(self):
+        """自动保存思维导图文件"""
+        print(f"[MainWindow] auto_save_mindmap called")
+        if hasattr(self, 'mindmap_editor') and self.mindmap_editor:
+            print(f"[MainWindow] mindmap_file_path: {self.mindmap_editor.mindmap_file_path}")
+            # 使用编辑器当前的文件路径保存
+            result = self.mindmap_editor.save_file()
+            print(f"[MainWindow] save result: {result}")
+            
+            # 更新元数据中的修改时间
+            if self.mindmap_editor.mindmap_file_path:
+                note_path = os.path.dirname(self.mindmap_editor.mindmap_file_path)
+                self._update_modified_time(note_path)
+            
+            self.status.showMessage("已自动保存思维导图", 2000)
     
     def _update_modified_time(self, note_path):
         """更新笔记元数据中的修改时间"""
@@ -974,6 +1042,8 @@ if __name__ == "__main__":
         window.ui.verticalSplitter.setSizes([215, 658])
         
         window.show()
+        # 窗口显示后才标记初始化完成，避免启动期间的 resize 事件导致 splitter 闪烁
+        window._window_initialized = True
         write_startup_log("窗口显示完成，进入主循环")
         sys.exit(app.exec())
     except Exception as e:

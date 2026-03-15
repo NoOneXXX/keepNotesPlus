@@ -6,7 +6,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtCore import QUrl
-import markdown
+from markdown_it import MarkdownIt
+
 
 class MarkdownEditor(QWidget):
     def __init__(self):
@@ -27,10 +28,19 @@ class MarkdownEditor(QWidget):
         save_btn = QPushButton("保存为 .md")
         save_btn.clicked.connect(self.save_markdown)
         layout.addWidget(save_btn)
+        
+        # 初始化 markdown-it-py 解析器
+        self.md_parser = MarkdownIt('commonmark', {
+            'html': True,
+            'linkify': True,
+            'typographer': True,
+        })
+        self.md_parser.enable('table')
+        self.md_parser.enable('strikethrough')
 
     def render_markdown(self):
         md_text = self.editor.toPlainText()
-        html_body = markdown.markdown(md_text, extensions=["fenced_code", "tables"])
+        html_body = self.md_parser.render(md_text)
         full_html = f"""
         <html>
         <head>
@@ -57,12 +67,14 @@ class MarkdownEditor(QWidget):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(content)
 
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Markdown 编辑器 Demo")
+        self.setWindowTitle("Markdown 编辑器 Demo (markdown-it-py)")
         self.setGeometry(200, 150, 900, 600)
         self.setCentralWidget(MarkdownEditor())
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

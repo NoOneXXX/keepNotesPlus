@@ -1,6 +1,7 @@
 import re
 import uuid
 import time
+import json
 from pathlib import Path
 
 from gui.func.left.dropItemEvent import CustomTreeWidget
@@ -30,6 +31,7 @@ from ..utils import copy_and_overwrite,get_parent_path
 class XPNotebookTree(QWidget):
     # 信号定义
     open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器，参数为文件路径
+    open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
     
     def __init__(self, path, rich_text_edit=None, parent=None):
         super().__init__(parent)
@@ -174,7 +176,20 @@ class XPNotebookTree(QWidget):
                     items.append((folder_item, order_dir))
                     if detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
-                elif content_type.find('attachfile') != -1:
+                elif content_type == "mindmap":
+                    # 处理思维导图文件类型
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, name)
+                    # 使用思维导图图标
+                    mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+                    folder_item.setIcon(0, mindmap_icon)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
+                elif content_type and content_type.find('attachfile') != -1:
                     # 处理 epub 文件类型
                     # 封装这个树
                     folder_item = QTreeWidgetItem()
@@ -248,7 +263,12 @@ class XPNotebookTree(QWidget):
             self.open_markdown_editor.emit(file_path)
             return
         
-        # 触发这个更新富文本框的信号（Markdown 类型不触发）
+        # 处理思维导图文件类型 - 提前返回，不触发富文本框信号
+        if content_type == "mindmap":
+            self.open_mindmap_editor.emit(file_path)
+            return
+        
+        # 触发这个更新富文本框的信号（Markdown 和思维导图类型不触发）
         sm.change_web_engine_2_richtext_signal.emit()
         
         # 这个是发送地址给main那边 在那边自动保存的时候使用
@@ -383,6 +403,7 @@ class XPNotebookTree(QWidget):
             menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
             menu.add_separator()
             menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
+            menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
             menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
             menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
             menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
@@ -551,6 +572,13 @@ class XPNotebookTree(QWidget):
             show_toast(self, "回收站不存在", ToastWidget.ERROR)
             return
 
+        # 二次确认对话框 - 使用自定义样式
+        item_name = os.path.basename(item_path)
+        reply = self._show_delete_confirm_dialog(item_name, "删除到回收站")
+
+        if not reply:
+            return
+
         try:
             # 获取文件名
             item_name = os.path.basename(item_path)
@@ -633,41 +661,10 @@ class XPNotebookTree(QWidget):
     '''
     def empty_trash(self, trash_item):
         """清空回收站，需要二次确认"""
-        # 二次确认对话框
-        confirm_dialog = QMessageBox(self)
-        confirm_dialog.setIcon(QMessageBox.Warning)
-        confirm_dialog.setWindowTitle("清空回收站")
-        confirm_dialog.setText("确定要清空回收站吗？")
-        confirm_dialog.setInformativeText("此操作将永久删除回收站中的所有文件，不可恢复！")
-        confirm_dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm_dialog.setDefaultButton(QMessageBox.No)
-        confirm_dialog.button(QMessageBox.Yes).setText("确定清空")
-        confirm_dialog.button(QMessageBox.No).setText("取消")
+        # 二次确认对话框 - 使用自定义美观对话框
+        reply = self._show_delete_confirm_dialog("回收站", "清空回收站")
         
-        # 设置样式
-        confirm_dialog.setStyleSheet("""
-            QMessageBox {
-                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
-                font-size: 13px;
-            }
-            QPushButton {
-                padding: 6px 20px;
-                border-radius: 4px;
-                min-width: 80px;
-            }
-            QPushButton[text="确定清空"] {
-                background-color: #EF4444;
-                color: white;
-            }
-            QPushButton[text="取消"] {
-                background-color: #E5E7EB;
-                color: #333;
-            }
-        """)
-        
-        reply = confirm_dialog.exec()
-        
-        if reply != QMessageBox.Yes:
+        if not reply:
             return
 
         trash_path = trash_item.data(0, Qt.UserRole)
@@ -711,21 +708,11 @@ class XPNotebookTree(QWidget):
             show_toast(self, "文件路径不存在", ToastWidget.ERROR)
             return
 
-        # 二次确认
+        # 二次确认 - 使用自定义美观对话框
         item_name = os.path.basename(item_path)
-        confirm_dialog = QMessageBox(self)
-        confirm_dialog.setIcon(QMessageBox.Warning)
-        confirm_dialog.setWindowTitle("永久删除")
-        confirm_dialog.setText(f"确定要永久删除 \"{item_name}\" 吗？")
-        confirm_dialog.setInformativeText("此操作不可撤销！")
-        confirm_dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm_dialog.setDefaultButton(QMessageBox.No)
-        confirm_dialog.button(QMessageBox.Yes).setText("确定删除")
-        confirm_dialog.button(QMessageBox.No).setText("取消")
+        reply = self._show_delete_confirm_dialog(item_name, "永久删除")
         
-        reply = confirm_dialog.exec()
-        
-        if reply != QMessageBox.Yes:
+        if not reply:
             return
 
         try:
@@ -981,6 +968,195 @@ class XPNotebookTree(QWidget):
         
         dialog.exec()
 
+    def _show_delete_confirm_dialog(self, item_name, delete_type="删除"):
+        """
+        显示美观的删除确认对话框
+        
+        Args:
+            item_name: 要删除的项目名称
+            delete_type: 删除类型，如"删除到回收站"、"永久删除"、"清空回收站"
+        
+        Returns:
+            bool: 用户是否确认删除
+        """
+        dialog = QDialog(self)
+        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        dialog.setAttribute(Qt.WA_TranslucentBackground)
+        dialog.setFixedSize(420, 280)
+        
+        # 主布局
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # 主容器
+        container = QWidget()
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #FDF8F3;
+                border-radius: 24px;
+            }
+        """)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(32, 28, 32, 24)
+        container_layout.setSpacing(20)
+        
+        # 图标区域
+        icon_widget = QWidget()
+        icon_widget.setFixedSize(72, 72)
+        icon_widget.setStyleSheet("""
+            QWidget {
+                background: qradialgradient(cx:0.5, cy:0.5, radius:0.5,
+                    stop:0 #F5E6D3, stop:0.7 #EBD5C5, stop:1 #E0C4B0);
+                border-radius: 24px;
+            }
+        """)
+        icon_layout = QHBoxLayout(icon_widget)
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        
+        icon_label = QLabel("🗑")
+        icon_label.setStyleSheet("background: transparent; font-size: 32px;")
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_layout.addWidget(icon_label)
+        
+        icon_container = QHBoxLayout()
+        icon_container.addStretch()
+        icon_container.addWidget(icon_widget)
+        icon_container.addStretch()
+        container_layout.addLayout(icon_container)
+        
+        # 标题
+        title_label = QLabel(delete_type)
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: #4A4540;
+                font-size: 20px;
+                font-weight: 700;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            }
+        """)
+        container_layout.addWidget(title_label)
+        
+        # 内容文本
+        content_text = f'确定要删除 "{item_name}" 吗？'
+        if delete_type == "清空回收站":
+            content_text = "确定要清空回收站吗？"
+        
+        content_label = QLabel(content_text)
+        content_label.setAlignment(Qt.AlignCenter)
+        content_label.setWordWrap(True)
+        content_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: #6B6560;
+                font-size: 14px;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+                line-height: 1.5;
+            }
+        """)
+        container_layout.addWidget(content_label)
+        
+        # 提示信息
+        if delete_type == "删除到回收站":
+            tip_text = "删除的文件将被移动到回收站，可以在回收站中恢复。"
+        elif delete_type == "永久删除":
+            tip_text = "⚠️ 此操作不可撤销，文件将被永久删除！"
+        elif delete_type == "清空回收站":
+            tip_text = "⚠️ 回收站中的所有文件将被永久删除，不可恢复！"
+        else:
+            tip_text = ""
+        
+        if tip_text:
+            tip_label = QLabel(tip_text)
+            tip_label.setAlignment(Qt.AlignCenter)
+            tip_label.setWordWrap(True)
+            tip_label.setStyleSheet("""
+                QLabel {
+                    background: transparent;
+                    color: #9A9590;
+                    font-size: 12px;
+                    font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+                }
+            """)
+            container_layout.addWidget(tip_label)
+        
+        # 按钮区域 - 居中布局
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(16)
+        btn_layout.addStretch()
+        
+        # 取消按钮
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedSize(100, 40)
+        cancel_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #EDE8E3;
+                color: #5C5855;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: 500;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #E0D9D2;
+            }
+            QPushButton:pressed {
+                background-color: #D3CCC4;
+            }
+        """)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+        
+        # 确认删除按钮
+        confirm_btn = QPushButton("确定删除")
+        confirm_btn.setFixedSize(100, 40)
+        confirm_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        confirm_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E07A5F;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #D4694F;
+            }
+            QPushButton:pressed {
+                background-color: #C55A40;
+            }
+        """)
+        confirm_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(confirm_btn)
+        
+        btn_layout.addStretch()
+        container_layout.addLayout(btn_layout)
+        
+        # 添加阴影效果
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(40)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 8)
+        container.setGraphicsEffect(shadow)
+        
+        layout.addWidget(container)
+        
+        # 居中显示
+        main_window = QApplication.activeWindow()
+        if main_window:
+            x = main_window.x() + (main_window.width() - dialog.width()) // 2
+            y = main_window.y() + (main_window.height() - dialog.height()) // 2
+            dialog.move(x, y)
+        
+        result = dialog.exec()
+        return result == QDialog.Accepted
+
     '''
     创建一个新的文件
     从ui下面的home.html 取出文件的模板
@@ -1116,6 +1292,89 @@ class XPNotebookTree(QWidget):
                 except:
                     pass
             QMessageBox.critical(self, "创建失败", f"无法创建 Markdown 文件:\n{e}")
+
+    '''
+    创建思维导图文件
+    '''
+    def create_mindmap_file(self, item, index=0):
+        dir_path = item.data(0, Qt.UserRole)
+        name = '新建思维导图' if index == 0 else f'新建思维导图-{index}'
+        file_path = os.path.join(dir_path, name)
+
+        if os.path.exists(file_path):
+            self.create_mindmap_file(item, index + 1)
+            return
+        
+        created_folder = False
+        created_metadata = False
+        created_mindmap = False
+        
+        try:
+            # 将它的父类改成 has_children true
+            editor = JsonEditor()
+            editor_data = editor.read_node_infos(dir_path)
+            editor_data['node']['detail_info']['has_children'] = True
+            # 获取到子类最大的值 排序使用
+            max_order_num_by_child_dir = editor_data['node']['detail_info']['max_order_num_by_child_dir']
+            max_order_num_by_child_dir = max_order_num_by_child_dir + 1
+            editor_data['node']['detail_info']['max_order_num_by_child_dir'] = max_order_num_by_child_dir
+            meta_path = os.path.join(dir_path, ".metadata.json")
+            editor.writeByData(meta_path, editor_data)
+
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
+            # 创建思维导图类型的 metadata
+            create_metadata_file_under_dir(file_path, content_type='mindmap', order_file_num=max_order_num_by_child_dir)
+            created_metadata = True
+            
+            # 创建空的思维导图文件
+            mindmap_path = os.path.join(file_path, "mindmap.json")
+            initial_data = {
+                "id": "root",
+                "text": name,
+                "x": 0,
+                "y": 0,
+                "level": 0,
+                "collapsed": False,
+                "children": []
+            }
+            with open(mindmap_path, "w", encoding="utf-8") as f:
+                json.dump(initial_data, f, ensure_ascii=False, indent=2)
+            created_mindmap = True
+
+            new_item = QTreeWidgetItem()
+            new_item.setText(0, name)
+            # 使用思维导图图标
+            mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+            new_item.setIcon(0, mindmap_icon)
+            new_item.setData(0, Qt.UserRole, file_path)
+            new_item.setData(0, Qt.UserRole + 1, True)  # 标记"刚创建"
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
+            new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
+
+            item.addChild(new_item)
+            item.setExpanded(True)
+            # 重新排序
+            self.reorder_tree(item, max_order_num_by_child_dir)
+
+            self.tree.setCurrentItem(new_item)
+            
+            # 发送信号通知主窗口打开思维导图编辑器
+            self.open_mindmap_editor.emit(file_path)
+            
+            # 进入编辑模式（延迟执行，确保信号处理完成）
+            QTimer.singleShot(100, lambda: self.tree.editItem(new_item, 0))
+
+        except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                except:
+                    pass
+            QMessageBox.critical(self, "创建失败", f"无法创建思维导图文件:\n{e}")
 
     def change_tag(data):
         data['node']['detail_info']['tag'] = 'new_tag'  # Add a new field
@@ -1268,6 +1527,13 @@ class XPNotebookTree(QWidget):
         if content_type == "markdown":
             markdown_icon = QIcon(QPixmap(":images/markdown.png"))
             item.setIcon(0, markdown_icon)
+            return
+        
+        # 思维导图类型
+        if content_type == "mindmap":
+            # 暂时使用 markdown 图标，可以后续添加专门的思维导图图标
+            mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+            item.setIcon(0, mindmap_icon)
             return
         
         # 关闭

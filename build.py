@@ -43,6 +43,17 @@ if os.path.exists(qss_dir):
             source_path = os.path.join(qss_dir, filename).replace('\\', '/')
             cmd_args.append(f"--include-data-files={source_path}=gui/ui/qss/{filename}")
 
+# 包含 JS 资源文件（KaTeX 和 Mermaid）
+js_dir = os.path.join(base_dir, "gui", "ui", "js")
+if os.path.exists(js_dir):
+    for root, dirs, files in os.walk(js_dir):
+        for filename in files:
+            if filename.endswith(('.js', '.css')):
+                source_path = os.path.join(root, filename).replace('\\', '/')
+                # 计算相对路径
+                rel_path = os.path.relpath(source_path, base_dir).replace('\\', '/')
+                cmd_args.append(f"--include-data-files={source_path}={rel_path}")
+
 # 包含 pdfjs 目录（PDF预览功能需要）
 pdfjs_dir = os.path.join(base_dir, "pdfjs")
 if os.path.exists(pdfjs_dir):

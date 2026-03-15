@@ -586,17 +586,24 @@ em {
 }
 
 /* ===== 代码高亮 Dracula 风格 ===== */
-.code-block .hll { background-color: #44475a }
-.code-block .c { color: #6272a4; font-style: italic }
-.code-block .err { color: #ff5555 }
-.code-block .k { color: #ff79c6 }
-.code-block .o { color: #ff79c6 }
-.code-block .ch { color: #6272a4; font-style: italic }
-.code-block .cm { color: #6272a4; font-style: italic }
-.code-block .cp { color: #ff79c6 }
-.code-block .cpf { color: #6272a4 }
-.code-block .c1 { color: #6272a4; font-style: italic }
-.code-block .cs { color: #6272a4; font-style: italic }
+.code-block .hll, [class*="code-block"] .hll { background-color: #44475a }
+.code-block .c, [class*="code-block"] .c { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.code-block .err, [class*="code-block"] .err { color: #ff5555 }
+.code-block .k, [class*="code-block"] .k { color: #ff79c6 }
+.code-block .o, [class*="code-block"] .o { color: #ff79c6 }
+.code-block .ch, [class*="code-block"] .ch { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.code-block .cm, [class*="code-block"] .cm { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.code-block .cp, [class*="code-block"] .cp { color: #ff79c6 }
+.code-block .cpf, [class*="code-block"] .cpf { color: #ff9f43 !important; font-weight: 500 }
+.code-block .c1, [class*="code-block"] .c1 { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.code-block .cs, [class*="code-block"] .cs { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+/* Pygments 生成的 highlight 类 */
+.highlight .c { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.highlight .ch { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.highlight .cm { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.highlight .cpf { color: #ff9f43 !important; font-weight: 500 }
+.highlight .c1 { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
+.highlight .cs { color: #ff9f43 !important; font-style: italic; font-weight: 500 }
 .code-block .gd { color: #ff5555 }
 .code-block .ge { font-style: italic }
 .code-block .gi { color: #50fa7b }
@@ -853,17 +860,24 @@ code:not(pre code) {
 }
 
 /* ===== 浅色代码高亮 - Typora/GitHub 风格 ===== */
-.code-block .hll { background-color: #ffeb3b; color: #000; }
-.code-block .c { color: #6a737d; font-style: italic }
-.code-block .err { color: #cb2431 }
-.code-block .k { color: #d73a49; font-weight: 600 }
-.code-block .o { color: #24292e }
-.code-block .ch { color: #6a737d; font-style: italic }
-.code-block .cm { color: #6a737d; font-style: italic }
-.code-block .cp { color: #d73a49; font-weight: 600 }
-.code-block .cpf { color: #032f62 }
-.code-block .c1 { color: #6a737d; font-style: italic }
-.code-block .cs { color: #6a737d; font-style: italic }
+.code-block .hll, [class*="code-block"] .hll { background-color: #ffeb3b; color: #000; }
+.code-block .c, [class*="code-block"] .c { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.code-block .err, [class*="code-block"] .err { color: #cb2431 }
+.code-block .k, [class*="code-block"] .k { color: #d73a49; font-weight: 600 }
+.code-block .o, [class*="code-block"] .o { color: #24292e }
+.code-block .ch, [class*="code-block"] .ch { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.code-block .cm, [class*="code-block"] .cm { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.code-block .cp, [class*="code-block"] .cp { color: #d73a49; font-weight: 600 }
+.code-block .cpf, [class*="code-block"] .cpf { color: #e36209 !important; font-weight: 500 }
+.code-block .c1, [class*="code-block"] .c1 { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.code-block .cs, [class*="code-block"] .cs { color: #e36209 !important; font-style: italic; font-weight: 500 }
+/* Pygments 生成的 highlight 类 */
+.highlight .c { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.highlight .ch { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.highlight .cm { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.highlight .cpf { color: #e36209 !important; font-weight: 500 }
+.highlight .c1 { color: #e36209 !important; font-style: italic; font-weight: 500 }
+.highlight .cs { color: #e36209 !important; font-style: italic; font-weight: 500 }
 .code-block .gd { color: #cb2431; background-color: #ffeef0 }
 .code-block .ge { font-style: italic }
 .code-block .gi { color: #22863a; background-color: #f0fff4 }
@@ -1112,6 +1126,60 @@ em {
 .mermaid {
     display: flex;
     justify-content: center;
+}
+
+/* ===== 图片点击放大弹框 ===== */
+#image-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#image-modal .modal-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(4px);
+}
+
+#image-modal .modal-content {
+    position: relative;
+    max-width: 90%;
+    max-height: 90%;
+    z-index: 10001;
+}
+
+#image-modal .modal-content img {
+    max-width: 100%;
+    max-height: 90vh;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+#image-modal .modal-close {
+    position: absolute;
+    top: -40px;
+    right: 0;
+    color: white;
+    font-size: 32px;
+    font-weight: 300;
+    cursor: pointer;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+#image-modal .modal-close:hover {
+    opacity: 1;
 }
 
 /* ===== KaTeX 数学公式 ===== */
@@ -1401,6 +1469,49 @@ function renderMermaid() {
     }
 }
 
+// ===== 图片点击放大功能 =====
+function initImageZoom() {
+    // 为所有图片添加点击事件
+    const images = document.querySelectorAll('.markdown-body img');
+    images.forEach(function(img) {
+        img.style.cursor = 'zoom-in';
+        img.addEventListener('click', function(e) {
+            e.preventDefault();
+            showImageModal(this.src);
+        });
+    });
+}
+
+function showImageModal(src) {
+    // 创建弹框
+    const modal = document.createElement('div');
+    modal.id = 'image-modal';
+    modal.innerHTML = `
+        <div class="modal-overlay" onclick="closeImageModal()"></div>
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeImageModal()">&times;</span>
+            <img src="${src}" alt="大图">
+        </div>
+    `;
+    document.body.appendChild(modal);
+    document.body.style.overflow = 'hidden';
+}
+
+function closeImageModal() {
+    const modal = document.getElementById('image-modal');
+    if (modal) {
+        modal.remove();
+        document.body.style.overflow = '';
+    }
+}
+
+// ESC 键关闭弹框
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeImageModal();
+    }
+});
+
 // ===== 页面加载完成后渲染 =====
 document.addEventListener("DOMContentLoaded", function() {
     console.log('DOMContentLoaded - starting render');
@@ -1408,6 +1519,7 @@ document.addEventListener("DOMContentLoaded", function() {
     setTimeout(function() {
         renderMath();
         renderMermaid();
+        initImageZoom();
     }, 500);
 });
 
@@ -1417,6 +1529,7 @@ function tryRender(attempts) {
     setTimeout(function() {
         renderMath();
         renderMermaid();
+        initImageZoom();
         tryRender(attempts - 1);
     }, 1000);
 }

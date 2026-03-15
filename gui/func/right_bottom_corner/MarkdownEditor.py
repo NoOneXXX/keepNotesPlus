@@ -366,9 +366,6 @@ class MarkdownEditor(QWidget):
         
     def _on_split_content_changed(self):
         """分屏编辑器内容变化时同步"""
-        split_content = self.split_editor.toPlainText()
-        if self.editor.toPlainText() != split_content:
-            self.editor.setPlainText(split_content)
         self.content_changed.emit()
         self._update_split_preview()
     
@@ -590,16 +587,18 @@ class MarkdownEditor(QWidget):
             body_content = body_match.group(1).strip()
         else:
             body_content = html_content
-        
+
         # 转义用于 JavaScript 字符串
         body_content = body_content.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n')
-        
+
         if not self._split_preview_initialized:
             # 首次加载使用 setHtml
-            # 设置 base URL 为项目根目录，使本地 JS/CSS 资源可以加载
-            from gui.func.utils.markdown_renderer import PROJECT_ROOT
-            base_url = QUrl.fromLocalFile(PROJECT_ROOT + '/')
-            self.split_preview.setHtml(html_content, base_url)
+            # 设置 base URL 为 Markdown 文件所在目录，使本地图片资源可以加载
+            if self.md_file_path:
+                base_url = QUrl.fromLocalFile(os.path.dirname(self.md_file_path) + '/')
+                self.split_preview.setHtml(html_content, base_url)
+            else:
+                self.split_preview.setHtml(html_content)
             self._split_preview_initialized = True
         else:
             # 使用 JavaScript 更新内容，避免闪烁
@@ -647,7 +646,11 @@ class MarkdownEditor(QWidget):
             self.content_stack.setCurrentIndex(1)
             self._is_preview_mode = True
         elif mode == "split":
+            # 切换到分屏模式时，从主编辑器同步内容到分屏编辑器
+            # 临时阻塞信号避免触发不必要的更新
+            self.split_editor.blockSignals(True)
             self.split_editor.setPlainText(self.editor.toPlainText())
+            self.split_editor.blockSignals(False)
             self._split_preview_initialized = False
             if update_preview:
                 self._update_split_preview()
@@ -655,21 +658,20 @@ class MarkdownEditor(QWidget):
             self._is_preview_mode = False
             
     def _on_content_changed(self):
-        """内容变化时触发"""
+        """内容变化时触发（仅在非分屏模式下使用）"""
         self.content_changed.emit()
-        # 如果在分屏模式，实时更新分屏预览
-        if self.content_stack.currentIndex() == 2:
-            self._update_split_preview()
             
     def _update_preview(self):
         """更新预览内容"""
         md_content = self.editor.toPlainText()
         html_content = render_markdown(md_content, dark_mode=False)
-        
-        # 设置 base URL 为项目根目录，使本地 JS/CSS 资源可以加载
-        from gui.func.utils.markdown_renderer import PROJECT_ROOT
-        base_url = QUrl.fromLocalFile(PROJECT_ROOT + '/')
-        self.preview.setHtml(html_content, base_url)
+
+        # 设置 base URL 为 Markdown 文件所在目录，使本地图片资源可以加载
+        if self.md_file_path:
+            base_url = QUrl.fromLocalFile(os.path.dirname(self.md_file_path) + '/')
+            self.preview.setHtml(html_content, base_url)
+        else:
+            self.preview.setHtml(html_content)
         
         # 延迟执行 KaTeX 和 Mermaid 渲染（确保脚本已加载）
         def render_math_and_mermaid():
@@ -720,20 +722,37 @@ class MarkdownEditor(QWidget):
     def load_file(self, file_path):
         """加载 Markdown 文件"""
         try:
+            # 临时阻塞信号，避免加载过程中触发不必要的更新
+            self.editor.blockSignals(True)
+            self.split_editor.blockSignals(True)
+
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             self.editor.setPlainText(content)
             self.split_editor.setPlainText(content)
             self.set_file_path(file_path)
-            
+
+            # 重置修改标记
+            self.editor.document().setModified(False)
+            self.split_editor.document().setModified(False)
+
+            # 恢复信号
+            self.editor.blockSignals(False)
+            self.split_editor.blockSignals(False)
+
+            # 根据当前模式更新预览
             current_mode = self.content_stack.currentIndex()
             if current_mode == 1:
                 self._update_preview()
             elif current_mode == 2:
+                self._split_preview_initialized = False
                 self._update_split_preview()
-            
+
             return True
         except Exception as e:
+            # 确保信号恢复
+            self.editor.blockSignals(False)
+            self.split_editor.blockSignals(False)
             logger.error(f"加载 Markdown 文件失败: {e}")
             return False
             
@@ -741,19 +760,34 @@ class MarkdownEditor(QWidget):
         """保存 Markdown 文件"""
         if file_path:
             self.md_file_path = file_path
-        
+
         if not self.md_file_path:
             return False
-            
+
         try:
             parent_dir = os.path.dirname(self.md_file_path)
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
-            
-            content = self.editor.toPlainText()
+
+            # 根据当前模式获取正确的编辑器内容
+            current_mode = self.content_stack.currentIndex()
+            if current_mode == 2:  # 分屏模式
+                content = self.split_editor.toPlainText()
+                # 同步到主编辑器（阻塞信号避免触发自动保存循环）
+                self.editor.blockSignals(True)
+                self.editor.setPlainText(content)
+                self.editor.blockSignals(False)
+            else:
+                content = self.editor.toPlainText()
+
             with open(self.md_file_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             self.set_file_path(self.md_file_path)
+
+            # 重置修改标记
+            self.editor.document().setModified(False)
+            self.split_editor.document().setModified(False)
+
             return True
         except Exception as e:
             logger.error(f"保存 Markdown 文件失败: {e}")
@@ -761,6 +795,10 @@ class MarkdownEditor(QWidget):
             
     def get_content(self):
         """获取当前内容"""
+        # 根据当前模式获取正确的编辑器内容
+        current_mode = self.content_stack.currentIndex()
+        if current_mode == 2:  # 分屏模式
+            return self.split_editor.toPlainText()
         return self.editor.toPlainText()
         
     def set_content(self, content):
@@ -769,6 +807,10 @@ class MarkdownEditor(QWidget):
         
     def is_modified(self):
         """检查是否有修改"""
+        # 根据当前模式检查正确的编辑器
+        current_mode = self.content_stack.currentIndex()
+        if current_mode == 2:  # 分屏模式
+            return self.split_editor.document().isModified()
         return self.editor.document().isModified()
         
     def clear(self):

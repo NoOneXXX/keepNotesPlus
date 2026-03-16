@@ -580,16 +580,18 @@ class XPNotebookTree(QWidget):
             return
 
         try:
+            import shutil
+            
             # 获取文件名
             item_name = os.path.basename(item_path)
             target_path = os.path.join(trash_path, item_name)
             
-            # 如果目标已存在，添加时间戳后缀
+            # 如果回收站中已存在同名文件，先删除它
             if os.path.exists(target_path):
-                timestamp = int(time.time())
-                item_name_base = os.path.splitext(item_name)[0]
-                item_name_ext = os.path.splitext(item_name)[1]
-                target_path = os.path.join(trash_path, f"{item_name_base}_{timestamp}{item_name_ext}")
+                if os.path.isdir(target_path):
+                    shutil.rmtree(target_path)
+                else:
+                    os.remove(target_path)
 
             # 保存原始路径到 metadata
             editor = JsonEditor()
@@ -599,8 +601,15 @@ class XPNotebookTree(QWidget):
                 editor.writeByData(os.path.join(item_path, ".metadata.json"), metadata)
 
             # 移动文件到回收站
-            import shutil
             shutil.move(item_path, target_path)
+            
+            # 验证移动是否成功（源文件应该不存在了）
+            if os.path.exists(item_path):
+                # 如果源文件还存在，强制删除
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
 
             # 更新父节点的 has_children 状态
             parent_item = item.parent()
@@ -676,11 +685,18 @@ class XPNotebookTree(QWidget):
             import shutil
             deleted_count = 0
             
-            # 遍历删除所有内容
+            # 遍历删除所有内容（包括文件和文件夹）
             for item_name in os.listdir(trash_path):
+                # 跳过以 . 开头的隐藏文件/文件夹（如 .metadata.json）
+                if item_name.startswith('.'):
+                    continue
+                    
                 item_full_path = os.path.join(trash_path, item_name)
-                if os.path.isdir(item_full_path) and not item_name.startswith('.'):
+                if os.path.isdir(item_full_path):
                     shutil.rmtree(item_full_path)
+                    deleted_count += 1
+                elif os.path.isfile(item_full_path):
+                    os.remove(item_full_path)
                     deleted_count += 1
 
             # 清空树节点
@@ -765,12 +781,13 @@ class XPNotebookTree(QWidget):
             item_name = os.path.basename(item_path)
             target_path = os.path.join(original_parent_path, item_name)
 
-            # 如果目标已存在，添加后缀
+            # 如果目标已存在，先删除它再恢复
             if os.path.exists(target_path):
-                timestamp = int(time.time())
-                item_name_base = os.path.splitext(item_name)[0]
-                item_name_ext = os.path.splitext(item_name)[1]
-                target_path = os.path.join(original_parent_path, f"{item_name_base}_restored{item_name_ext}")
+                import shutil
+                if os.path.isdir(target_path):
+                    shutil.rmtree(target_path)
+                else:
+                    os.remove(target_path)
 
             # 移动文件
             import shutil

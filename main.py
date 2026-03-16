@@ -855,8 +855,12 @@ class MainWindow(QMainWindow):
     @Slot()
     def change_2_rich_text_editor(self):
         # 如果当前是 Markdown 编辑器，先保存
-        if self.current_editor_type == "markdown":
+        if self.current_editor_type == "markdown" and self.markdown_editor and self.markdown_editor.md_file_path:
             self.markdown_editor.save_file()
+        
+        # 如果当前是思维导图编辑器，先保存
+        if self.current_editor_type == "mindmap" and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+            self.mindmap_editor.save_file()
         
         # 切换到富文本编辑器（只是切换堆叠窗口索引，无闪烁）
         self.editor_stack.setCurrentIndex(0)
@@ -875,14 +879,24 @@ class MainWindow(QMainWindow):
         # 获取 Markdown 文件路径
         md_path = os.path.join(file_path, "document.md")
         
-        # 如果已经在 Markdown 编辑器，直接加载文件
+        # 如果已经在 Markdown 编辑器，先保存当前文件再加载新文件
         if self.current_editor_type == "markdown":
+            # 强制保存当前编辑的内容，不检查 is_modified
+            if self.markdown_editor.md_file_path:
+                self.markdown_editor.save_file()
+            
             self.markdown_editor.set_file_path(md_path)
             if os.path.exists(md_path):
                 self.markdown_editor.load_file(md_path)
             self.path = md_path
             self.update_title()
             return
+        
+        # 从其他编辑器切换过来时，先保存当前编辑器内容
+        if self.current_editor_type == "mindmap" and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+            self.mindmap_editor.save_file()
+        elif self.current_editor_type == "richtext" and self.richtext_saved_path:
+            self.auto_save_note()
         
         # 切换到 Markdown 编辑器（只是切换堆叠窗口索引，无闪烁）
         self.markdown_editor.set_file_path(md_path)
@@ -926,8 +940,12 @@ class MainWindow(QMainWindow):
         mindmap_path = os.path.join(file_path, "mindmap.json")
         print(f"[MainWindow] mindmap_path: {mindmap_path}, exists: {os.path.exists(mindmap_path)}")
         
-        # 如果已经在思维导图编辑器，直接加载文件
+        # 如果已经在思维导图编辑器，先保存当前文件再加载新文件
         if self.current_editor_type == "mindmap":
+            # 强制保存当前编辑的内容，不检查 is_modified
+            if self.mindmap_editor.mindmap_file_path:
+                self.mindmap_editor.save_file()
+            
             self.mindmap_editor.set_file_path(mindmap_path)
             if os.path.exists(mindmap_path):
                 self.mindmap_editor.load_file(mindmap_path)
@@ -937,6 +955,12 @@ class MainWindow(QMainWindow):
             self.path = mindmap_path
             self.update_title()
             return
+        
+        # 从其他编辑器切换过来时，先保存当前编辑器内容
+        if self.current_editor_type == "markdown" and self.markdown_editor and self.markdown_editor.md_file_path:
+            self.markdown_editor.save_file()
+        elif self.current_editor_type == "richtext" and self.richtext_saved_path:
+            self.auto_save_note()
         
         # 切换到思维导图编辑器
         self.mindmap_editor.set_file_path(mindmap_path)
@@ -987,6 +1011,23 @@ class MainWindow(QMainWindow):
                     editor.writeByData(meta_path, metadata)
         except Exception as e:
             pass  # 忽略更新时间错误
+
+    def closeEvent(self, event):
+        """窗口关闭时保存所有未保存的内容"""
+        # 保存 Markdown 编辑器内容 - 强制保存当前内容
+        if hasattr(self, 'markdown_editor') and self.markdown_editor and self.markdown_editor.md_file_path:
+            # 直接调用 save_file，不检查 is_modified，确保内容一定被保存
+            self.markdown_editor.save_file()
+        
+        # 保存思维导图编辑器内容
+        if hasattr(self, 'mindmap_editor') and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+            self.mindmap_editor.save_file()
+        
+        # 保存富文本编辑器内容
+        if self.richtext_saved_path:
+            self.auto_save_note()
+        
+        event.accept()
 
     def open_settings(self):
         """打开设置对话框"""

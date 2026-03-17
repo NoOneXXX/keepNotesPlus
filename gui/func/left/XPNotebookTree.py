@@ -32,6 +32,7 @@ class XPNotebookTree(QWidget):
     # 信号定义
     open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器，参数为文件路径
     open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
+    file_renamed = Signal(str, str)     # 文件重命名信号，参数为(旧路径, 新路径)
     
     def __init__(self, path, rich_text_edit=None, parent=None):
         super().__init__(parent)
@@ -234,8 +235,11 @@ class XPNotebookTree(QWidget):
         try:
             os.rename(old_path, new_path)
             item.setData(0, Qt.UserRole, new_path)
-            item.setData(0, Qt.UserRole + 1, None)  #移除“刚创建”标记
+            item.setData(0, Qt.UserRole + 1, None)  #移除"刚创建"标记
             self._update_child_user_roles(item, old_path, new_path)
+                    
+            # 发射文件重命名信号，通知主窗口更新编辑器路径
+            self.file_renamed.emit(old_path, new_path)
         except Exception as e:
             QMessageBox.critical(self, "重命名失败", str(e))
             item.setText(0, os.path.basename(old_path))

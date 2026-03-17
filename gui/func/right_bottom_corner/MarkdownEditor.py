@@ -637,10 +637,23 @@ class MarkdownEditor(QWidget):
         self.preview_btn.setStyleSheet(self._get_toolbar_btn_style(mode == "preview"))
         self.split_btn.setStyleSheet(self._get_toolbar_btn_style(mode == "split"))
         
+        # 获取当前模式，用于判断是否需要同步内容
+        current_mode = self.content_stack.currentIndex()
+        
         if mode == "edit":
+            # 如果从分屏模式切换到编辑模式，且分屏编辑器有修改，需要同步内容
+            if current_mode == 2 and self.split_editor.document().isModified():
+                self.editor.blockSignals(True)
+                self.editor.setPlainText(self.split_editor.toPlainText())
+                self.editor.blockSignals(False)
             self.content_stack.setCurrentIndex(0)
             self._is_preview_mode = False
         elif mode == "preview":
+            # 如果从分屏模式切换到预览模式，且分屏编辑器有修改，需要同步内容
+            if current_mode == 2 and self.split_editor.document().isModified():
+                self.editor.blockSignals(True)
+                self.editor.setPlainText(self.split_editor.toPlainText())
+                self.editor.blockSignals(False)
             if update_preview:
                 self._update_preview()
             self.content_stack.setCurrentIndex(1)
@@ -650,6 +663,8 @@ class MarkdownEditor(QWidget):
             # 临时阻塞信号避免触发不必要的更新
             self.split_editor.blockSignals(True)
             self.split_editor.setPlainText(self.editor.toPlainText())
+            # 重置分屏编辑器的修改标记，因为内容是刚从主编辑器同步的
+            self.split_editor.document().setModified(False)
             self.split_editor.blockSignals(False)
             self._split_preview_initialized = False
             if update_preview:
@@ -758,46 +773,62 @@ class MarkdownEditor(QWidget):
             
     def save_file(self, file_path=None):
         """保存 Markdown 文件"""
-        if file_path:
-            self.md_file_path = file_path
-
-        if not self.md_file_path:
+        # 保存当前要使用的文件路径（避免在保存过程中被修改）
+        target_path = file_path if file_path else self.md_file_path
+        
+        if not target_path:
+            logger.error("保存失败：没有指定文件路径")
             return False
 
         try:
-            parent_dir = os.path.dirname(self.md_file_path)
+            parent_dir = os.path.dirname(target_path)
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
 
-            # 优先获取分屏编辑器的内容（如果它有修改）
-            # 因为分屏模式是最后编辑的可能性较大
+            # 获取内容的逻辑：
+            # 1. 如果分屏编辑器有修改（无论当前是否在分屏模式），优先使用分屏编辑器的内容
+            # 2. 否则使用主编辑器的内容
+            # 3. 最后同步两个编辑器的内容
             current_mode = self.content_stack.currentIndex()
-            if current_mode == 2:  # 分屏模式
+            
+            # 检查分屏编辑器是否有修改 - 这是关键！
+            # 即使用户切换到了其他模式，只要分屏编辑器有修改，就应该保存它
+            if self.split_editor.document().isModified():
                 content = self.split_editor.toPlainText()
+                logger.debug(f"保存分屏编辑器内容到: {target_path}")
                 # 同步到主编辑器（阻塞信号避免触发自动保存循环）
                 self.editor.blockSignals(True)
                 self.editor.setPlainText(content)
                 self.editor.blockSignals(False)
+            elif current_mode == 2:  # 分屏模式（但上面的条件未触发，可能是新建文件等情况）
+                content = self.split_editor.toPlainText()
+                logger.debug(f"分屏模式下保存内容到: {target_path}")
+                # 同步到主编辑器
+                self.editor.blockSignals(True)
+                self.editor.setPlainText(content)
+                self.editor.blockSignals(False)
             else:
-                # 非分屏模式下，检查 split_editor 是否有修改
-                # 如果有，优先使用 split_editor 的内容
-                if self.split_editor.document().isModified():
-                    content = self.split_editor.toPlainText()
-                    # 同步到主编辑器
-                    self.editor.blockSignals(True)
-                    self.editor.setPlainText(content)
-                    self.editor.blockSignals(False)
-                else:
-                    content = self.editor.toPlainText()
+                # 使用主编辑器的内容
+                content = self.editor.toPlainText()
+                logger.debug(f"保存主编辑器内容到: {target_path}")
+                # 同步到分屏编辑器
+                self.split_editor.blockSignals(True)
+                self.split_editor.setPlainText(content)
+                self.split_editor.blockSignals(False)
 
-            with open(self.md_file_path, 'w', encoding='utf-8') as f:
+            # 使用 target_path 而不是 self.md_file_path，确保保存到正确的路径
+            with open(target_path, 'w', encoding='utf-8') as f:
                 f.write(content)
+            
+            # 只有在保存成功后才更新文件路径
+            self.md_file_path = target_path
             self.set_file_path(self.md_file_path)
 
             # 重置修改标记
             self.editor.document().setModified(False)
             self.split_editor.document().setModified(False)
 
+            logger.info(f"Markdown 文件保存成功: {target_path}")
             return True
         except Exception as e:
             logger.error(f"保存 Markdown 文件失败: {e}")

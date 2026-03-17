@@ -769,7 +769,8 @@ class MarkdownEditor(QWidget):
             if parent_dir and not os.path.exists(parent_dir):
                 os.makedirs(parent_dir, exist_ok=True)
 
-            # 根据当前模式获取正确的编辑器内容
+            # 优先获取分屏编辑器的内容（如果它有修改）
+            # 因为分屏模式是最后编辑的可能性较大
             current_mode = self.content_stack.currentIndex()
             if current_mode == 2:  # 分屏模式
                 content = self.split_editor.toPlainText()
@@ -778,7 +779,16 @@ class MarkdownEditor(QWidget):
                 self.editor.setPlainText(content)
                 self.editor.blockSignals(False)
             else:
-                content = self.editor.toPlainText()
+                # 非分屏模式下，检查 split_editor 是否有修改
+                # 如果有，优先使用 split_editor 的内容
+                if self.split_editor.document().isModified():
+                    content = self.split_editor.toPlainText()
+                    # 同步到主编辑器
+                    self.editor.blockSignals(True)
+                    self.editor.setPlainText(content)
+                    self.editor.blockSignals(False)
+                else:
+                    content = self.editor.toPlainText()
 
             with open(self.md_file_path, 'w', encoding='utf-8') as f:
                 f.write(content)

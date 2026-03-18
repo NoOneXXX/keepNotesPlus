@@ -1,6 +1,7 @@
 import re
 import uuid
 import time
+import json
 from pathlib import Path
 
 from gui.func.left.dropItemEvent import CustomTreeWidget
@@ -30,6 +31,8 @@ from ..utils import copy_and_overwrite,get_parent_path
 class XPNotebookTree(QWidget):
     # 信号定义
     open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器，参数为文件路径
+    open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
+    file_renamed = Signal(str, str)     # 文件重命名信号，参数为(旧路径, 新路径)
     
     def __init__(self, path, rich_text_edit=None, parent=None):
         super().__init__(parent)
@@ -174,7 +177,20 @@ class XPNotebookTree(QWidget):
                     items.append((folder_item, order_dir))
                     if detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
-                elif content_type.find('attachfile') != -1:
+                elif content_type == "mindmap":
+                    # 处理思维导图文件类型
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, name)
+                    # 使用思维导图图标
+                    mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+                    folder_item.setIcon(0, mindmap_icon)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
+                elif content_type and content_type.find('attachfile') != -1:
                     # 处理 epub 文件类型
                     # 封装这个树
                     folder_item = QTreeWidgetItem()
@@ -219,8 +235,11 @@ class XPNotebookTree(QWidget):
         try:
             os.rename(old_path, new_path)
             item.setData(0, Qt.UserRole, new_path)
-            item.setData(0, Qt.UserRole + 1, None)  #移除“刚创建”标记
+            item.setData(0, Qt.UserRole + 1, None)  #移除"刚创建"标记
             self._update_child_user_roles(item, old_path, new_path)
+                    
+            # 发射文件重命名信号，通知主窗口更新编辑器路径
+            self.file_renamed.emit(old_path, new_path)
         except Exception as e:
             QMessageBox.critical(self, "重命名失败", str(e))
             item.setText(0, os.path.basename(old_path))
@@ -248,7 +267,12 @@ class XPNotebookTree(QWidget):
             self.open_markdown_editor.emit(file_path)
             return
         
-        # 触发这个更新富文本框的信号（Markdown 类型不触发）
+        # 处理思维导图文件类型 - 提前返回，不触发富文本框信号
+        if content_type == "mindmap":
+            self.open_mindmap_editor.emit(file_path)
+            return
+        
+        # 触发这个更新富文本框的信号（Markdown 和思维导图类型不触发）
         sm.change_web_engine_2_richtext_signal.emit()
         
         # 这个是发送地址给main那边 在那边自动保存的时候使用
@@ -383,6 +407,7 @@ class XPNotebookTree(QWidget):
             menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
             menu.add_separator()
             menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
+            menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
             menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
             menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
             menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
@@ -551,17 +576,26 @@ class XPNotebookTree(QWidget):
             show_toast(self, "回收站不存在", ToastWidget.ERROR)
             return
 
+        # 二次确认对话框 - 使用自定义样式
+        item_name = os.path.basename(item_path)
+        reply = self._show_delete_confirm_dialog(item_name, "删除到回收站")
+
+        if not reply:
+            return
+
         try:
+            import shutil
+            
             # 获取文件名
             item_name = os.path.basename(item_path)
             target_path = os.path.join(trash_path, item_name)
             
-            # 如果目标已存在，添加时间戳后缀
+            # 如果回收站中已存在同名文件，先删除它
             if os.path.exists(target_path):
-                timestamp = int(time.time())
-                item_name_base = os.path.splitext(item_name)[0]
-                item_name_ext = os.path.splitext(item_name)[1]
-                target_path = os.path.join(trash_path, f"{item_name_base}_{timestamp}{item_name_ext}")
+                if os.path.isdir(target_path):
+                    shutil.rmtree(target_path)
+                else:
+                    os.remove(target_path)
 
             # 保存原始路径到 metadata
             editor = JsonEditor()
@@ -571,18 +605,35 @@ class XPNotebookTree(QWidget):
                 editor.writeByData(os.path.join(item_path, ".metadata.json"), metadata)
 
             # 移动文件到回收站
-            import shutil
             shutil.move(item_path, target_path)
+            
+            # 验证移动是否成功（源文件应该不存在了）
+            if os.path.exists(item_path):
+                # 如果源文件还存在，强制删除
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                else:
+                    os.remove(item_path)
 
             # 更新父节点的 has_children 状态
             parent_item = item.parent()
             if parent_item:
                 parent_path = parent_item.data(0, Qt.UserRole)
-                if parent_path:
-                    # 检查父目录下是否还有子文件夹
-                    has_children = any(os.path.isdir(os.path.join(parent_path, f)) 
-                                      for f in os.listdir(parent_path) 
-                                      if not f.startswith('.'))
+                if parent_path and os.path.exists(parent_path):
+                    # 检查父目录下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(parent_path):
+                            # 跳过隐藏文件和.metadata.json，images也要排除
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
+                                continue
+                            full_path = os.path.join(parent_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
                     parent_metadata = editor.read_node_infos(parent_path)
                     if parent_metadata and 'node' in parent_metadata:
                         parent_metadata['node']['detail_info']['has_children'] = has_children
@@ -633,41 +684,10 @@ class XPNotebookTree(QWidget):
     '''
     def empty_trash(self, trash_item):
         """清空回收站，需要二次确认"""
-        # 二次确认对话框
-        confirm_dialog = QMessageBox(self)
-        confirm_dialog.setIcon(QMessageBox.Warning)
-        confirm_dialog.setWindowTitle("清空回收站")
-        confirm_dialog.setText("确定要清空回收站吗？")
-        confirm_dialog.setInformativeText("此操作将永久删除回收站中的所有文件，不可恢复！")
-        confirm_dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm_dialog.setDefaultButton(QMessageBox.No)
-        confirm_dialog.button(QMessageBox.Yes).setText("确定清空")
-        confirm_dialog.button(QMessageBox.No).setText("取消")
+        # 二次确认对话框 - 使用自定义美观对话框
+        reply = self._show_delete_confirm_dialog("回收站", "清空回收站")
         
-        # 设置样式
-        confirm_dialog.setStyleSheet("""
-            QMessageBox {
-                font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif;
-                font-size: 13px;
-            }
-            QPushButton {
-                padding: 6px 20px;
-                border-radius: 4px;
-                min-width: 80px;
-            }
-            QPushButton[text="确定清空"] {
-                background-color: #EF4444;
-                color: white;
-            }
-            QPushButton[text="取消"] {
-                background-color: #E5E7EB;
-                color: #333;
-            }
-        """)
-        
-        reply = confirm_dialog.exec()
-        
-        if reply != QMessageBox.Yes:
+        if not reply:
             return
 
         trash_path = trash_item.data(0, Qt.UserRole)
@@ -678,12 +698,33 @@ class XPNotebookTree(QWidget):
         try:
             import shutil
             deleted_count = 0
+            # 记录需要更新 has_children 的原始父目录
+            original_parents_to_update = set()
             
-            # 遍历删除所有内容
+            # 遍历删除所有内容（包括文件和文件夹）
             for item_name in os.listdir(trash_path):
+                # 跳过以 . 开头的隐藏文件/文件夹（如 .metadata.json）
+                if item_name.startswith('.'):
+                    continue
+                    
                 item_full_path = os.path.join(trash_path, item_name)
-                if os.path.isdir(item_full_path) and not item_name.startswith('.'):
+                
+                # 获取 original_path 并记录需要更新的父目录
+                editor = JsonEditor()
+                metadata = editor.read_node_infos(item_full_path)
+                if metadata and 'node' in metadata:
+                    original_path = metadata['node']['detail_info'].get('original_path')
+                    if original_path:
+                        original_parents_to_update.add(original_path)
+                
+                # 检查并删除可能存在的源文件（original_path）
+                self._delete_original_path_if_exists(item_full_path)
+                
+                if os.path.isdir(item_full_path):
                     shutil.rmtree(item_full_path)
+                    deleted_count += 1
+                elif os.path.isfile(item_full_path):
+                    os.remove(item_full_path)
                     deleted_count += 1
 
             # 清空树节点
@@ -695,11 +736,55 @@ class XPNotebookTree(QWidget):
             if trash_metadata and 'node' in trash_metadata:
                 trash_metadata['node']['detail_info']['has_children'] = False
                 editor.writeByData(os.path.join(trash_path, ".metadata.json"), trash_metadata)
+            
+            # 更新所有原始父目录的 has_children 状态
+            for original_parent_path in original_parents_to_update:
+                if os.path.exists(original_parent_path):
+                    # 检查父目录下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(original_parent_path):
+                            # 跳过隐藏文件和.metadata.json
+                            if f.startswith('.') or f == '.metadata.json':
+                                continue
+                            full_path = os.path.join(original_parent_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
+                    parent_metadata = editor.read_node_infos(original_parent_path)
+                    if parent_metadata and 'node' in parent_metadata:
+                        parent_metadata['node']['detail_info']['has_children'] = has_children
+                        editor.writeByData(os.path.join(original_parent_path, ".metadata.json"), parent_metadata)
 
             show_toast(self, f"回收站已清空\n共删除 {deleted_count} 个项目", ToastWidget.SUCCESS)
 
         except Exception as e:
             show_toast(self, f"清空失败: {str(e)}", ToastWidget.ERROR)
+    
+    def _delete_original_path_if_exists(self, item_path):
+        """检查并删除 item 对应的 original_path 源文件（如果存在）"""
+        try:
+            editor = JsonEditor()
+            metadata = editor.read_node_infos(item_path)
+            if metadata and 'node' in metadata:
+                original_path = metadata['node']['detail_info'].get('original_path')
+                if original_path:
+                    # 构建完整的源文件路径
+                    item_name = os.path.basename(item_path)
+                    full_original_path = os.path.join(original_path, item_name)
+                    # 如果源文件存在，删除它
+                    if os.path.exists(full_original_path):
+                        if os.path.isdir(full_original_path):
+                            import shutil
+                            shutil.rmtree(full_original_path)
+                        elif os.path.isfile(full_original_path):
+                            os.remove(full_original_path)
+        except Exception:
+            # 忽略错误，继续执行主删除操作
+            pass
 
     '''
     永久删除文件
@@ -711,25 +796,19 @@ class XPNotebookTree(QWidget):
             show_toast(self, "文件路径不存在", ToastWidget.ERROR)
             return
 
-        # 二次确认
+        # 二次确认 - 使用自定义美观对话框
         item_name = os.path.basename(item_path)
-        confirm_dialog = QMessageBox(self)
-        confirm_dialog.setIcon(QMessageBox.Warning)
-        confirm_dialog.setWindowTitle("永久删除")
-        confirm_dialog.setText(f"确定要永久删除 \"{item_name}\" 吗？")
-        confirm_dialog.setInformativeText("此操作不可撤销！")
-        confirm_dialog.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        confirm_dialog.setDefaultButton(QMessageBox.No)
-        confirm_dialog.button(QMessageBox.Yes).setText("确定删除")
-        confirm_dialog.button(QMessageBox.No).setText("取消")
+        reply = self._show_delete_confirm_dialog(item_name, "永久删除")
         
-        reply = confirm_dialog.exec()
-        
-        if reply != QMessageBox.Yes:
+        if not reply:
             return
 
         try:
             import shutil
+            
+            # 检查并删除可能存在的源文件（original_path）
+            self._delete_original_path_if_exists(item_path)
+            
             shutil.rmtree(item_path)
 
             # 从树中移除节点
@@ -738,16 +817,27 @@ class XPNotebookTree(QWidget):
                 parent_item.removeChild(item)
 
                 # 更新父节点的 has_children 状态
-                trash_path = parent_item.data(0, Qt.UserRole)
-                if trash_path:
-                    has_children = any(os.path.isdir(os.path.join(trash_path, f)) 
-                                      for f in os.listdir(trash_path) 
-                                      if not f.startswith('.'))
+                parent_path = parent_item.data(0, Qt.UserRole)
+                if parent_path and os.path.exists(parent_path):
+                    # 检查父目录下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(parent_path):
+                            # 跳过隐藏文件和.metadata.json
+                            if f.startswith('.') or f == '.metadata.json':
+                                continue
+                            full_path = os.path.join(parent_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
                     editor = JsonEditor()
-                    parent_metadata = editor.read_node_infos(trash_path)
+                    parent_metadata = editor.read_node_infos(parent_path)
                     if parent_metadata and 'node' in parent_metadata:
                         parent_metadata['node']['detail_info']['has_children'] = has_children
-                        editor.writeByData(os.path.join(trash_path, ".metadata.json"), parent_metadata)
+                        editor.writeByData(os.path.join(parent_path, ".metadata.json"), parent_metadata)
 
             show_toast(self, f"已永久删除\n{item_name}", ToastWidget.SUCCESS)
 
@@ -778,12 +868,13 @@ class XPNotebookTree(QWidget):
             item_name = os.path.basename(item_path)
             target_path = os.path.join(original_parent_path, item_name)
 
-            # 如果目标已存在，添加后缀
+            # 如果目标已存在，先删除它再恢复
             if os.path.exists(target_path):
-                timestamp = int(time.time())
-                item_name_base = os.path.splitext(item_name)[0]
-                item_name_ext = os.path.splitext(item_name)[1]
-                target_path = os.path.join(original_parent_path, f"{item_name_base}_restored{item_name_ext}")
+                import shutil
+                if os.path.isdir(target_path):
+                    shutil.rmtree(target_path)
+                else:
+                    os.remove(target_path)
 
             # 移动文件
             import shutil
@@ -804,10 +895,21 @@ class XPNotebookTree(QWidget):
 
                 # 更新回收站的 has_children 状态
                 trash_path = parent_item.data(0, Qt.UserRole)
-                if trash_path:
-                    has_children = any(os.path.isdir(os.path.join(trash_path, f)) 
-                                      for f in os.listdir(trash_path) 
-                                      if not f.startswith('.'))
+                if trash_path and os.path.exists(trash_path):
+                    # 检查回收站下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(trash_path):
+                            # 跳过隐藏文件和.metadata.json
+                            if f.startswith('.') or f == '.metadata.json':
+                                continue
+                            full_path = os.path.join(trash_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
                     trash_metadata = editor.read_node_infos(trash_path)
                     if trash_metadata and 'node' in trash_metadata:
                         trash_metadata['node']['detail_info']['has_children'] = has_children
@@ -981,6 +1083,195 @@ class XPNotebookTree(QWidget):
         
         dialog.exec()
 
+    def _show_delete_confirm_dialog(self, item_name, delete_type="删除"):
+        """
+        显示美观的删除确认对话框
+        
+        Args:
+            item_name: 要删除的项目名称
+            delete_type: 删除类型，如"删除到回收站"、"永久删除"、"清空回收站"
+        
+        Returns:
+            bool: 用户是否确认删除
+        """
+        dialog = QDialog(self)
+        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        dialog.setAttribute(Qt.WA_TranslucentBackground)
+        dialog.setFixedSize(420, 280)
+        
+        # 主布局
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # 主容器
+        container = QWidget()
+        container.setStyleSheet("""
+            QWidget {
+                background-color: #FDF8F3;
+                border-radius: 24px;
+            }
+        """)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(32, 28, 32, 24)
+        container_layout.setSpacing(20)
+        
+        # 图标区域
+        icon_widget = QWidget()
+        icon_widget.setFixedSize(72, 72)
+        icon_widget.setStyleSheet("""
+            QWidget {
+                background: qradialgradient(cx:0.5, cy:0.5, radius:0.5,
+                    stop:0 #F5E6D3, stop:0.7 #EBD5C5, stop:1 #E0C4B0);
+                border-radius: 24px;
+            }
+        """)
+        icon_layout = QHBoxLayout(icon_widget)
+        icon_layout.setContentsMargins(0, 0, 0, 0)
+        
+        icon_label = QLabel("🗑")
+        icon_label.setStyleSheet("background: transparent; font-size: 32px;")
+        icon_label.setAlignment(Qt.AlignCenter)
+        icon_layout.addWidget(icon_label)
+        
+        icon_container = QHBoxLayout()
+        icon_container.addStretch()
+        icon_container.addWidget(icon_widget)
+        icon_container.addStretch()
+        container_layout.addLayout(icon_container)
+        
+        # 标题
+        title_label = QLabel(delete_type)
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: #4A4540;
+                font-size: 20px;
+                font-weight: 700;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            }
+        """)
+        container_layout.addWidget(title_label)
+        
+        # 内容文本
+        content_text = f'确定要删除 "{item_name}" 吗？'
+        if delete_type == "清空回收站":
+            content_text = "确定要清空回收站吗？"
+        
+        content_label = QLabel(content_text)
+        content_label.setAlignment(Qt.AlignCenter)
+        content_label.setWordWrap(True)
+        content_label.setStyleSheet("""
+            QLabel {
+                background: transparent;
+                color: #6B6560;
+                font-size: 14px;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+                line-height: 1.5;
+            }
+        """)
+        container_layout.addWidget(content_label)
+        
+        # 提示信息
+        if delete_type == "删除到回收站":
+            tip_text = "删除的文件将被移动到回收站，可以在回收站中恢复。"
+        elif delete_type == "永久删除":
+            tip_text = "⚠️ 此操作不可撤销，文件将被永久删除！"
+        elif delete_type == "清空回收站":
+            tip_text = "⚠️ 回收站中的所有文件将被永久删除，不可恢复！"
+        else:
+            tip_text = ""
+        
+        if tip_text:
+            tip_label = QLabel(tip_text)
+            tip_label.setAlignment(Qt.AlignCenter)
+            tip_label.setWordWrap(True)
+            tip_label.setStyleSheet("""
+                QLabel {
+                    background: transparent;
+                    color: #9A9590;
+                    font-size: 12px;
+                    font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+                }
+            """)
+            container_layout.addWidget(tip_label)
+        
+        # 按钮区域 - 居中布局
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(16)
+        btn_layout.addStretch()
+        
+        # 取消按钮
+        cancel_btn = QPushButton("取消")
+        cancel_btn.setFixedSize(100, 40)
+        cancel_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #EDE8E3;
+                color: #5C5855;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: 500;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #E0D9D2;
+            }
+            QPushButton:pressed {
+                background-color: #D3CCC4;
+            }
+        """)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addWidget(cancel_btn)
+        
+        # 确认删除按钮
+        confirm_btn = QPushButton("确定删除")
+        confirm_btn.setFixedSize(100, 40)
+        confirm_btn.setCursor(QCursor(Qt.PointingHandCursor))
+        confirm_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #E07A5F;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+            }
+            QPushButton:hover {
+                background-color: #D4694F;
+            }
+            QPushButton:pressed {
+                background-color: #C55A40;
+            }
+        """)
+        confirm_btn.clicked.connect(dialog.accept)
+        btn_layout.addWidget(confirm_btn)
+        
+        btn_layout.addStretch()
+        container_layout.addLayout(btn_layout)
+        
+        # 添加阴影效果
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(40)
+        shadow.setColor(QColor(0, 0, 0, 80))
+        shadow.setOffset(0, 8)
+        container.setGraphicsEffect(shadow)
+        
+        layout.addWidget(container)
+        
+        # 居中显示
+        main_window = QApplication.activeWindow()
+        if main_window:
+            x = main_window.x() + (main_window.width() - dialog.width()) // 2
+            y = main_window.y() + (main_window.height() - dialog.height()) // 2
+            dialog.move(x, y)
+        
+        result = dialog.exec()
+        return result == QDialog.Accepted
+
     '''
     创建一个新的文件
     从ui下面的home.html 取出文件的模板
@@ -1116,6 +1407,89 @@ class XPNotebookTree(QWidget):
                 except:
                     pass
             QMessageBox.critical(self, "创建失败", f"无法创建 Markdown 文件:\n{e}")
+
+    '''
+    创建思维导图文件
+    '''
+    def create_mindmap_file(self, item, index=0):
+        dir_path = item.data(0, Qt.UserRole)
+        name = '新建思维导图' if index == 0 else f'新建思维导图-{index}'
+        file_path = os.path.join(dir_path, name)
+
+        if os.path.exists(file_path):
+            self.create_mindmap_file(item, index + 1)
+            return
+        
+        created_folder = False
+        created_metadata = False
+        created_mindmap = False
+        
+        try:
+            # 将它的父类改成 has_children true
+            editor = JsonEditor()
+            editor_data = editor.read_node_infos(dir_path)
+            editor_data['node']['detail_info']['has_children'] = True
+            # 获取到子类最大的值 排序使用
+            max_order_num_by_child_dir = editor_data['node']['detail_info']['max_order_num_by_child_dir']
+            max_order_num_by_child_dir = max_order_num_by_child_dir + 1
+            editor_data['node']['detail_info']['max_order_num_by_child_dir'] = max_order_num_by_child_dir
+            meta_path = os.path.join(dir_path, ".metadata.json")
+            editor.writeByData(meta_path, editor_data)
+
+            os.makedirs(file_path, exist_ok=False)
+            created_folder = True
+            
+            # 创建思维导图类型的 metadata
+            create_metadata_file_under_dir(file_path, content_type='mindmap', order_file_num=max_order_num_by_child_dir)
+            created_metadata = True
+            
+            # 创建空的思维导图文件
+            mindmap_path = os.path.join(file_path, "mindmap.json")
+            initial_data = {
+                "id": "root",
+                "text": name,
+                "x": 0,
+                "y": 0,
+                "level": 0,
+                "collapsed": False,
+                "children": []
+            }
+            with open(mindmap_path, "w", encoding="utf-8") as f:
+                json.dump(initial_data, f, ensure_ascii=False, indent=2)
+            created_mindmap = True
+
+            new_item = QTreeWidgetItem()
+            new_item.setText(0, name)
+            # 使用思维导图图标
+            mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+            new_item.setIcon(0, mindmap_icon)
+            new_item.setData(0, Qt.UserRole, file_path)
+            new_item.setData(0, Qt.UserRole + 1, True)  # 标记"刚创建"
+            new_item.setData(0, Qt.UserRole + 2, max_order_num_by_child_dir)  # 设置排序值
+            new_item.setFlags(new_item.flags() | Qt.ItemIsEditable)
+
+            item.addChild(new_item)
+            item.setExpanded(True)
+            # 重新排序
+            self.reorder_tree(item, max_order_num_by_child_dir)
+
+            self.tree.setCurrentItem(new_item)
+            
+            # 发送信号通知主窗口打开思维导图编辑器
+            self.open_mindmap_editor.emit(file_path)
+            
+            # 进入编辑模式（延迟执行，确保信号处理完成）
+            QTimer.singleShot(100, lambda: self.tree.editItem(new_item, 0))
+
+        except Exception as e:
+            # 清理：如果创建过程中失败，删除已创建的文件/文件夹
+            import shutil
+            if created_folder and os.path.exists(file_path):
+                try:
+                    shutil.rmtree(file_path)
+                except:
+                    pass
+            QMessageBox.critical(self, "创建失败", f"无法创建思维导图文件:\n{e}")
 
     def change_tag(data):
         data['node']['detail_info']['tag'] = 'new_tag'  # Add a new field
@@ -1268,6 +1642,13 @@ class XPNotebookTree(QWidget):
         if content_type == "markdown":
             markdown_icon = QIcon(QPixmap(":images/markdown.png"))
             item.setIcon(0, markdown_icon)
+            return
+        
+        # 思维导图类型
+        if content_type == "mindmap":
+            # 暂时使用 markdown 图标，可以后续添加专门的思维导图图标
+            mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+            item.setIcon(0, mindmap_icon)
             return
         
         # 关闭

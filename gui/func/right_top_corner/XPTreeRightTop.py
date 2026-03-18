@@ -83,6 +83,7 @@ class RowSelectionDelegate(QStyledItemDelegate):
 class XPTreeRightTop(QWidget):
     # 信号定义
     open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器
+    open_mindmap_editor = Signal(str)   # 打开思维导图编辑器
     
     def __init__(self, path, selected_path=None, rich_text_edit=None, parent=None):
         super().__init__(parent)
@@ -98,6 +99,7 @@ class XPTreeRightTop(QWidget):
         self.folder_open_icon = QIcon(QPixmap(":images/folder-orange-open.png"))
         self.file_icon = QIcon(QPixmap(":images/note-violet.png"))
         self.markdown_icon = QIcon(QPixmap(":images/markdown.png"))
+        self.mindmap_icon = QIcon(QPixmap(":images/mindmap.png"))  # 思维导图图标
         self.attach_file = QIcon(QPixmap(":images/attach-file.png"))
         self.trash_icon = QIcon(QPixmap(":images/garbage.png"))
 
@@ -184,6 +186,21 @@ class XPTreeRightTop(QWidget):
                     folder_item.setText(1, format_time(created_time))
                     folder_item.setText(2, format_time(modified_time))
                     folder_item.setIcon(0, self.markdown_icon)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    if detail_info and detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())
+                
+                elif content_type == "mindmap":
+                    # 思维导图文件类型
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, name)
+                    folder_item.setText(1, format_time(created_time))
+                    folder_item.setText(2, format_time(modified_time))
+                    # 使用思维导图专用图标，如果没有则使用markdown图标
+                    folder_item.setIcon(0, self.mindmap_icon)
                     # 加入到集合
                     items.append((folder_item, order_dir))
                     if detail_info and detail_info.get('has_children', False):
@@ -336,6 +353,8 @@ class XPTreeRightTop(QWidget):
             item.setIcon(0, QIcon(QPixmap(icon_path)))
         elif content_type == "markdown":
             item.setIcon(0, self.markdown_icon)
+        elif content_type == "mindmap":
+            item.setIcon(0, self.mindmap_icon)
         elif content_type and content_type.find('attachfile') != -1:
             item.setIcon(0, self.attach_file)
         else:
@@ -377,6 +396,11 @@ class XPTreeRightTop(QWidget):
         # 处理 Markdown 文件类型
         if content_type == "markdown":
             self.open_markdown_editor.emit(file_path)
+            return
+        
+        # 处理思维导图文件类型
+        if content_type == "mindmap":
+            self.open_mindmap_editor.emit(file_path)
             return
         
         # 触发这个更新富文本框的信号
@@ -424,11 +448,14 @@ QTREEW_WIDGET_STYLE = """
         border: none;
     }
     QTreeWidget::item:selected {
-        background-color: transparent;
-        color: #374151;
+        background-color: #E5E7EB;
+        color: #111827;
     }
     QTreeWidget::item:hover {
-        background-color: #F9FAFB;
+        background-color: #F3F4F6;
+    }
+    QTreeWidget::item:selected:hover {
+        background-color: #D1D5DB;
     }
     QHeaderView::section {
         background-color: #FAFAF9;

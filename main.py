@@ -102,6 +102,7 @@ from gui.func.left.XPNotebookTree import XPNotebookTree
 from gui.func.right_top_corner.XPTreeRightTop import XPTreeRightTop
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
 from gui.func.right_bottom_corner.MarkdownEditor import MarkdownEditor
+from gui.func.right_bottom_corner.MindMapEditor import MindMapEditor
 from gui.func.top_menu.file_action import FileActions
 from gui.func.settings.settings_page import SettingsDialog
 from gui.func.singel_pkg.single_manager import sm
@@ -183,11 +184,19 @@ class MainWindow(QMainWindow):
         # 预创建 Markdown 编辑器（避免第一次打开时闪烁）
         self.markdown_editor = MarkdownEditor(self)
         self.markdown_editor.hide()
+        # 连接 Markdown 编辑器的自动保存信号（在初始化时连接，避免首次创建文件时丢失）
+        self.markdown_editor.content_changed.connect(self.auto_save_markdown)
+
+        # 预创建思维导图编辑器
+        self.mindmap_editor = MindMapEditor(self)
+        self.mindmap_editor.hide()
+        self.mindmap_editor.content_changed.connect(self.auto_save_mindmap)
 
         # 使用堆叠窗口管理多个编辑器
         self.editor_stack = QStackedWidget()
         self.editor_stack.addWidget(self.rich_text_editor)  # 索引 0
         self.editor_stack.addWidget(self.markdown_editor)   # 索引 1
+        self.editor_stack.addWidget(self.mindmap_editor)    # 索引 2
 
         # Add editor stack to noteContentTable
         self.ui.noteContentTable.setCellWidget(0, 0, self.editor_stack)
@@ -552,7 +561,8 @@ class MainWindow(QMainWindow):
         self.update_title()
         
         # 标记窗口已完成初始化，用于控制 resizeEvent 的行为
-        self._window_initialized = True
+        # 注意：此标志在 show() 之后才设置为 True，避免初始化期间的 resize 事件导致闪烁
+        self._window_initialized = False
 
     def block_signals(self, objects, b):
         for o in objects:
@@ -771,6 +781,10 @@ class MainWindow(QMainWindow):
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
         # 连接 Markdown 编辑器信号
         tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
+        # 连接思维导图编辑器信号
+        tree_widget.open_mindmap_editor.connect(self.open_mindmap_editor)
+        # 连接文件重命名信号
+        tree_widget.file_renamed.connect(self.on_file_renamed)
 
         self.ui.verticalLayout.addWidget(tree_widget)
 
@@ -813,6 +827,8 @@ class MainWindow(QMainWindow):
             tree.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  #  设置扩展策略
             # 连接 Markdown 编辑器信号
             tree.open_markdown_editor.connect(self.open_markdown_editor)
+            # 连接思维导图编辑器信号
+            tree.open_mindmap_editor.connect(self.open_mindmap_editor)
             self.layout.addWidget(tree)
 
     # 动态的加载pdf
@@ -843,8 +859,16 @@ class MainWindow(QMainWindow):
     @Slot()
     def change_2_rich_text_editor(self):
         # 如果当前是 Markdown 编辑器，先保存
-        if self.current_editor_type == "markdown":
-            self.markdown_editor.save_file()
+        if self.current_editor_type == "markdown" and self.markdown_editor and self.markdown_editor.md_file_path:
+            current_md_path = self.markdown_editor.md_file_path
+            logger.info(f"切换到富文本编辑器前保存 Markdown 文件: {current_md_path}")
+            save_result = self.markdown_editor.save_file()
+            if not save_result:
+                logger.error(f"保存 Markdown 文件失败: {current_md_path}")
+        
+        # 如果当前是思维导图编辑器，先保存
+        if self.current_editor_type == "mindmap" and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+            self.mindmap_editor.save_file()
         
         # 切换到富文本编辑器（只是切换堆叠窗口索引，无闪烁）
         self.editor_stack.setCurrentIndex(0)
@@ -857,30 +881,80 @@ class MainWindow(QMainWindow):
         # 回传这个参数给left 左侧的树点击事件
         sm.received_rich_text_2_left_click_signal.emit(self.rich_text_editor)
 
+    @Slot(str, str)
+    def on_file_renamed(self, old_path, new_path):
+        """处理文件重命名事件，更新编辑器路径"""
+        # 检查当前是否是 Markdown 编辑器
+        if self.current_editor_type == "markdown" and self.markdown_editor:
+            # 获取旧的 Markdown 文件路径
+            old_md_path = os.path.join(old_path, "document.md")
+            # 获取新的 Markdown 文件路径
+            new_md_path = os.path.join(new_path, "document.md")
+            
+            # 如果当前编辑的文件是被重命名的文件，更新编辑器路径
+            if self.markdown_editor.md_file_path == old_md_path:
+                logger.info(f"文件重命名，更新 Markdown 编辑器路径: {old_md_path} -> {new_md_path}")
+                self.markdown_editor.set_file_path(new_md_path)
+                self.path = new_md_path
+                self.update_title()
+        
+        # 检查当前是否是思维导图编辑器
+        if self.current_editor_type == "mindmap" and self.mindmap_editor:
+            # 获取旧的思维导图文件路径
+            old_mindmap_path = os.path.join(old_path, "mindmap.json")
+            # 获取新的思维导图文件路径
+            new_mindmap_path = os.path.join(new_path, "mindmap.json")
+            
+            # 如果当前编辑的文件是被重命名的文件，更新编辑器路径
+            if self.mindmap_editor.mindmap_file_path == old_mindmap_path:
+                logger.info(f"文件重命名，更新思维导图编辑器路径: {old_mindmap_path} -> {new_mindmap_path}")
+                self.mindmap_editor.set_file_path(new_mindmap_path)
+                self.path = new_mindmap_path
+                self.update_title()
+
     @Slot(str)
     def open_markdown_editor(self, file_path):
         """打开 Markdown 编辑器"""
         # 获取 Markdown 文件路径
         md_path = os.path.join(file_path, "document.md")
         
-        # 如果已经在 Markdown 编辑器，直接加载文件
+        # 如果已经在 Markdown 编辑器，先保存当前文件再加载新文件
         if self.current_editor_type == "markdown":
+            # 强制保存当前编辑的内容，不检查 is_modified
+            # 使用当前编辑器保存路径，而不是新路径
+            current_md_path = self.markdown_editor.md_file_path
+            if current_md_path:
+                logger.info(f"切换前保存当前 Markdown 文件: {current_md_path}")
+                save_result = self.markdown_editor.save_file()
+                if not save_result:
+                    logger.error(f"保存当前 Markdown 文件失败: {current_md_path}")
+            
+            # 保存完成后再设置新路径并加载
             self.markdown_editor.set_file_path(md_path)
             if os.path.exists(md_path):
                 self.markdown_editor.load_file(md_path)
+            else:
+                # 如果文件不存在，清空编辑器内容
+                self.markdown_editor.editor.clear()
+                self.markdown_editor.split_editor.clear()
             self.path = md_path
             self.update_title()
             return
+        
+        # 从其他编辑器切换过来时，先保存当前编辑器内容
+        if self.current_editor_type == "mindmap" and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+            self.mindmap_editor.save_file()
+        elif self.current_editor_type == "richtext" and self.richtext_saved_path:
+            self.auto_save_note()
         
         # 切换到 Markdown 编辑器（只是切换堆叠窗口索引，无闪烁）
         self.markdown_editor.set_file_path(md_path)
         if os.path.exists(md_path):
             self.markdown_editor.load_file(md_path)
-        
-        # 连接内容变化信号（使用标志位避免重复连接和断开警告）
-        if not hasattr(self, '_markdown_signal_connected') or not self._markdown_signal_connected:
-            self.markdown_editor.content_changed.connect(self.auto_save_markdown)
-            self._markdown_signal_connected = True
+        else:
+            # 如果文件不存在，清空编辑器内容
+            self.markdown_editor.editor.clear()
+            self.markdown_editor.split_editor.clear()
         
         # 切换堆叠窗口索引
         self.editor_stack.setCurrentIndex(1)
@@ -895,15 +969,90 @@ class MainWindow(QMainWindow):
         """自动保存 Markdown 文件"""
         if hasattr(self, 'markdown_editor') and self.markdown_editor:
             # 使用编辑器当前的文件路径保存
-            self.markdown_editor.save_file()
+            current_md_path = self.markdown_editor.md_file_path
+            if current_md_path:
+                logger.debug(f"自动保存 Markdown 文件: {current_md_path}")
+                save_result = self.markdown_editor.save_file()
+                
+                if save_result:
+                    # 更新元数据中的修改时间
+                    # md 文件在子目录下，需要获取父目录作为笔记路径
+                    note_path = os.path.dirname(current_md_path)
+                    self._update_modified_time(note_path)
+                    self.status.showMessage("已自动保存", 2000)
+                else:
+                    logger.error(f"自动保存 Markdown 文件失败: {current_md_path}")
+                    self.status.showMessage("自动保存失败", 2000)
+
+    @Slot(str)
+    def open_mindmap_editor(self, file_path):
+        """打开思维导图编辑器"""
+        print(f"[MainWindow] open_mindmap_editor called with: {file_path}")
+        
+        # 获取思维导图文件路径
+        mindmap_path = os.path.join(file_path, "mindmap.json")
+        print(f"[MainWindow] mindmap_path: {mindmap_path}, exists: {os.path.exists(mindmap_path)}")
+        
+        # 如果已经在思维导图编辑器，先保存当前文件再加载新文件
+        if self.current_editor_type == "mindmap":
+            # 强制保存当前编辑的内容，不检查 is_modified
+            if self.mindmap_editor.mindmap_file_path:
+                self.mindmap_editor.save_file()
+            
+            self.mindmap_editor.set_file_path(mindmap_path)
+            if os.path.exists(mindmap_path):
+                self.mindmap_editor.load_file(mindmap_path)
+            else:
+                # 文件不存在，初始化新思维导图
+                self.mindmap_editor.ensure_initialized()
+            self.path = mindmap_path
+            self.update_title()
+            return
+        
+        # 从其他编辑器切换过来时，先保存当前编辑器内容
+        if self.current_editor_type == "markdown" and self.markdown_editor and self.markdown_editor.md_file_path:
+            current_md_path = self.markdown_editor.md_file_path
+            logger.info(f"切换到思维导图编辑器前保存 Markdown 文件: {current_md_path}")
+            save_result = self.markdown_editor.save_file()
+            if not save_result:
+                logger.error(f"保存 Markdown 文件失败: {current_md_path}")
+        elif self.current_editor_type == "richtext" and self.richtext_saved_path:
+            self.auto_save_note()
+        
+        # 切换到思维导图编辑器
+        self.mindmap_editor.set_file_path(mindmap_path)
+        if os.path.exists(mindmap_path):
+            print(f"[MainWindow] Loading existing mindmap file")
+            self.mindmap_editor.load_file(mindmap_path)
+        else:
+            print(f"[MainWindow] No existing mindmap file, initializing new one")
+            # 文件不存在，初始化新思维导图
+            self.mindmap_editor.ensure_initialized()
+        
+        # 切换堆叠窗口索引
+        self.editor_stack.setCurrentIndex(2)
+        self.current_editor = self.mindmap_editor
+        self.current_editor_type = "mindmap"
+        
+        # 更新标题
+        self.path = mindmap_path
+        self.update_title()
+    
+    def auto_save_mindmap(self):
+        """自动保存思维导图文件"""
+        print(f"[MainWindow] auto_save_mindmap called")
+        if hasattr(self, 'mindmap_editor') and self.mindmap_editor:
+            print(f"[MainWindow] mindmap_file_path: {self.mindmap_editor.mindmap_file_path}")
+            # 使用编辑器当前的文件路径保存
+            result = self.mindmap_editor.save_file()
+            print(f"[MainWindow] save result: {result}")
             
             # 更新元数据中的修改时间
-            if self.markdown_editor.md_file_path:
-                # md 文件在子目录下，需要获取父目录作为笔记路径
-                note_path = os.path.dirname(self.markdown_editor.md_file_path)
+            if self.mindmap_editor.mindmap_file_path:
+                note_path = os.path.dirname(self.mindmap_editor.mindmap_file_path)
                 self._update_modified_time(note_path)
             
-            self.status.showMessage("已自动保存", 2000)
+            self.status.showMessage("已自动保存思维导图", 2000)
     
     def _update_modified_time(self, note_path):
         """更新笔记元数据中的修改时间"""
@@ -919,6 +1068,27 @@ class MainWindow(QMainWindow):
                     editor.writeByData(meta_path, metadata)
         except Exception as e:
             pass  # 忽略更新时间错误
+
+    def closeEvent(self, event):
+        """窗口关闭时保存所有未保存的内容"""
+        # 保存 Markdown 编辑器内容 - 强制保存当前内容
+        if hasattr(self, 'markdown_editor') and self.markdown_editor and self.markdown_editor.md_file_path:
+            # 直接调用 save_file，不检查 is_modified，确保内容一定被保存
+            current_md_path = self.markdown_editor.md_file_path
+            logger.info(f"窗口关闭前保存 Markdown 文件: {current_md_path}")
+            save_result = self.markdown_editor.save_file()
+            if not save_result:
+                logger.error(f"窗口关闭时保存 Markdown 文件失败: {current_md_path}")
+        
+        # 保存思维导图编辑器内容
+        if hasattr(self, 'mindmap_editor') and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+            self.mindmap_editor.save_file()
+        
+        # 保存富文本编辑器内容
+        if self.richtext_saved_path:
+            self.auto_save_note()
+        
+        event.accept()
 
     def open_settings(self):
         """打开设置对话框"""
@@ -974,6 +1144,8 @@ if __name__ == "__main__":
         window.ui.verticalSplitter.setSizes([215, 658])
         
         window.show()
+        # 窗口显示后才标记初始化完成，避免启动期间的 resize 事件导致 splitter 闪烁
+        window._window_initialized = True
         write_startup_log("窗口显示完成，进入主循环")
         sys.exit(app.exec())
     except Exception as e:

@@ -696,6 +696,10 @@ class XPNotebookTree(QWidget):
                     continue
                     
                 item_full_path = os.path.join(trash_path, item_name)
+                
+                # 检查并删除可能存在的源文件（original_path）
+                self._delete_original_path_if_exists(item_full_path)
+                
                 if os.path.isdir(item_full_path):
                     shutil.rmtree(item_full_path)
                     deleted_count += 1
@@ -717,6 +721,28 @@ class XPNotebookTree(QWidget):
 
         except Exception as e:
             show_toast(self, f"清空失败: {str(e)}", ToastWidget.ERROR)
+    
+    def _delete_original_path_if_exists(self, item_path):
+        """检查并删除 item 对应的 original_path 源文件（如果存在）"""
+        try:
+            editor = JsonEditor()
+            metadata = editor.read_node_infos(item_path)
+            if metadata and 'node' in metadata:
+                original_path = metadata['node']['detail_info'].get('original_path')
+                if original_path:
+                    # 构建完整的源文件路径
+                    item_name = os.path.basename(item_path)
+                    full_original_path = os.path.join(original_path, item_name)
+                    # 如果源文件存在，删除它
+                    if os.path.exists(full_original_path):
+                        if os.path.isdir(full_original_path):
+                            import shutil
+                            shutil.rmtree(full_original_path)
+                        elif os.path.isfile(full_original_path):
+                            os.remove(full_original_path)
+        except Exception:
+            # 忽略错误，继续执行主删除操作
+            pass
 
     '''
     永久删除文件
@@ -737,6 +763,10 @@ class XPNotebookTree(QWidget):
 
         try:
             import shutil
+            
+            # 检查并删除可能存在的源文件（original_path）
+            self._delete_original_path_if_exists(item_path)
+            
             shutil.rmtree(item_path)
 
             # 从树中移除节点

@@ -184,7 +184,7 @@ class MarkdownEditor(QWidget):
         self.edit_btn = QPushButton("编辑")
         self.edit_btn.setCheckable(True)
         self.edit_btn.setChecked(True)
-        self.edit_btn.setStyleSheet(self._get_toolbar_btn_style(True))
+        self.edit_btn.setStyleSheet(self._get_toolbar_btn_style(False))
         
         self.preview_btn = QPushButton("预览")
         self.preview_btn.setCheckable(True)
@@ -192,7 +192,7 @@ class MarkdownEditor(QWidget):
         
         self.split_btn = QPushButton("分屏")
         self.split_btn.setCheckable(True)
-        self.split_btn.setStyleSheet(self._get_toolbar_btn_style(False))
+        self.split_btn.setStyleSheet(self._get_toolbar_btn_style(True))
         
         toolbar_layout.addWidget(self.edit_btn)
         toolbar_layout.addWidget(self.preview_btn)

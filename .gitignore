@@ -1,5 +1,5 @@
 # IntelliJ / PyCharm 项目配置目录
-.idea/
+.idea
 test
 logs
 *.db

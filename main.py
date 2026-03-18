@@ -1075,17 +1075,18 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'markdown_editor') and self.markdown_editor and self.markdown_editor.md_file_path:
             # 直接调用 save_file，不检查 is_modified，确保内容一定被保存
             current_md_path = self.markdown_editor.md_file_path
-            logger.info(f"窗口关闭前保存 Markdown 文件: {current_md_path}")
-            save_result = self.markdown_editor.save_file()
-            if not save_result:
-                logger.error(f"窗口关闭时保存 Markdown 文件失败: {current_md_path}")
+            if os.path.exists(current_md_path):
+                logger.info(f"窗口关闭前保存 Markdown 文件: {current_md_path}")
+                save_result = self.markdown_editor.save_file()
+                if not save_result:
+                    logger.error(f"窗口关闭时保存 Markdown 文件失败: {current_md_path}")
         
         # 保存思维导图编辑器内容
-        if hasattr(self, 'mindmap_editor') and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+        if hasattr(self, 'mindmap_editor') and self.mindmap_editor and self.mindmap_editor.mindmap_file_path and os.path.exists(self.mindmap_editor.mindmap_file_path):
             self.mindmap_editor.save_file()
         
         # 保存富文本编辑器内容
-        if self.richtext_saved_path:
+        if self.richtext_saved_path and os.path.exists(self.richtext_saved_path):
             self.auto_save_note()
         
         event.accept()

@@ -745,7 +745,7 @@ class XPNotebookTree(QWidget):
                     try:
                         for f in os.listdir(original_parent_path):
                             # 跳过隐藏文件和.metadata.json
-                            if f.startswith('.') or f == '.metadata.json':
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
                                 continue
                             full_path = os.path.join(original_parent_path, f)
                             if os.path.isdir(full_path):
@@ -824,7 +824,7 @@ class XPNotebookTree(QWidget):
                     try:
                         for f in os.listdir(parent_path):
                             # 跳过隐藏文件和.metadata.json
-                            if f.startswith('.') or f == '.metadata.json':
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
                                 continue
                             full_path = os.path.join(parent_path, f)
                             if os.path.isdir(full_path):
@@ -901,7 +901,7 @@ class XPNotebookTree(QWidget):
                     try:
                         for f in os.listdir(trash_path):
                             # 跳过隐藏文件和.metadata.json
-                            if f.startswith('.') or f == '.metadata.json':
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
                                 continue
                             full_path = os.path.join(trash_path, f)
                             if os.path.isdir(full_path):

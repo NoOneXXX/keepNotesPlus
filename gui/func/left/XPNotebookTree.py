@@ -619,11 +619,21 @@ class XPNotebookTree(QWidget):
             parent_item = item.parent()
             if parent_item:
                 parent_path = parent_item.data(0, Qt.UserRole)
-                if parent_path:
-                    # 检查父目录下是否还有子文件夹
-                    has_children = any(os.path.isdir(os.path.join(parent_path, f)) 
-                                      for f in os.listdir(parent_path) 
-                                      if not f.startswith('.'))
+                if parent_path and os.path.exists(parent_path):
+                    # 检查父目录下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(parent_path):
+                            # 跳过隐藏文件和.metadata.json，images也要排除
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
+                                continue
+                            full_path = os.path.join(parent_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
                     parent_metadata = editor.read_node_infos(parent_path)
                     if parent_metadata and 'node' in parent_metadata:
                         parent_metadata['node']['detail_info']['has_children'] = has_children
@@ -688,6 +698,8 @@ class XPNotebookTree(QWidget):
         try:
             import shutil
             deleted_count = 0
+            # 记录需要更新 has_children 的原始父目录
+            original_parents_to_update = set()
             
             # 遍历删除所有内容（包括文件和文件夹）
             for item_name in os.listdir(trash_path):
@@ -696,6 +708,14 @@ class XPNotebookTree(QWidget):
                     continue
                     
                 item_full_path = os.path.join(trash_path, item_name)
+                
+                # 获取 original_path 并记录需要更新的父目录
+                editor = JsonEditor()
+                metadata = editor.read_node_infos(item_full_path)
+                if metadata and 'node' in metadata:
+                    original_path = metadata['node']['detail_info'].get('original_path')
+                    if original_path:
+                        original_parents_to_update.add(original_path)
                 
                 # 检查并删除可能存在的源文件（original_path）
                 self._delete_original_path_if_exists(item_full_path)
@@ -716,6 +736,28 @@ class XPNotebookTree(QWidget):
             if trash_metadata and 'node' in trash_metadata:
                 trash_metadata['node']['detail_info']['has_children'] = False
                 editor.writeByData(os.path.join(trash_path, ".metadata.json"), trash_metadata)
+            
+            # 更新所有原始父目录的 has_children 状态
+            for original_parent_path in original_parents_to_update:
+                if os.path.exists(original_parent_path):
+                    # 检查父目录下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(original_parent_path):
+                            # 跳过隐藏文件和.metadata.json
+                            if f.startswith('.') or f == '.metadata.json':
+                                continue
+                            full_path = os.path.join(original_parent_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
+                    parent_metadata = editor.read_node_infos(original_parent_path)
+                    if parent_metadata and 'node' in parent_metadata:
+                        parent_metadata['node']['detail_info']['has_children'] = has_children
+                        editor.writeByData(os.path.join(original_parent_path, ".metadata.json"), parent_metadata)
 
             show_toast(self, f"回收站已清空\n共删除 {deleted_count} 个项目", ToastWidget.SUCCESS)
 
@@ -775,16 +817,27 @@ class XPNotebookTree(QWidget):
                 parent_item.removeChild(item)
 
                 # 更新父节点的 has_children 状态
-                trash_path = parent_item.data(0, Qt.UserRole)
-                if trash_path:
-                    has_children = any(os.path.isdir(os.path.join(trash_path, f)) 
-                                      for f in os.listdir(trash_path) 
-                                      if not f.startswith('.'))
+                parent_path = parent_item.data(0, Qt.UserRole)
+                if parent_path and os.path.exists(parent_path):
+                    # 检查父目录下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(parent_path):
+                            # 跳过隐藏文件和.metadata.json
+                            if f.startswith('.') or f == '.metadata.json':
+                                continue
+                            full_path = os.path.join(parent_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
                     editor = JsonEditor()
-                    parent_metadata = editor.read_node_infos(trash_path)
+                    parent_metadata = editor.read_node_infos(parent_path)
                     if parent_metadata and 'node' in parent_metadata:
                         parent_metadata['node']['detail_info']['has_children'] = has_children
-                        editor.writeByData(os.path.join(trash_path, ".metadata.json"), parent_metadata)
+                        editor.writeByData(os.path.join(parent_path, ".metadata.json"), parent_metadata)
 
             show_toast(self, f"已永久删除\n{item_name}", ToastWidget.SUCCESS)
 
@@ -842,10 +895,21 @@ class XPNotebookTree(QWidget):
 
                 # 更新回收站的 has_children 状态
                 trash_path = parent_item.data(0, Qt.UserRole)
-                if trash_path:
-                    has_children = any(os.path.isdir(os.path.join(trash_path, f)) 
-                                      for f in os.listdir(trash_path) 
-                                      if not f.startswith('.'))
+                if trash_path and os.path.exists(trash_path):
+                    # 检查回收站下是否还有子文件夹（排除隐藏文件和.metadata.json）
+                    has_children = False
+                    try:
+                        for f in os.listdir(trash_path):
+                            # 跳过隐藏文件和.metadata.json
+                            if f.startswith('.') or f == '.metadata.json':
+                                continue
+                            full_path = os.path.join(trash_path, f)
+                            if os.path.isdir(full_path):
+                                has_children = True
+                                break
+                    except (PermissionError, OSError):
+                        pass
+                    
                     trash_metadata = editor.read_node_infos(trash_path)
                     if trash_metadata and 'node' in trash_metadata:
                         trash_metadata['node']['detail_info']['has_children'] = has_children

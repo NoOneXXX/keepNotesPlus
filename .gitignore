@@ -3,3 +3,10 @@
 test
 logs
 *.db
+out
+bin
+target
+pdfjs/pdfs
+
+
+

@@ -400,6 +400,13 @@ class XPNotebookTree(QWidget):
             menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
             menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
             menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
+            menu.add_separator()
+            menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
+            menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
+            menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
+            menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
+            menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
+            menu.add_separator()
             menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
         else:
             # 普通文件夹/文件的右键菜单

@@ -1086,8 +1086,8 @@ class MainWindow(QMainWindow):
             self.mindmap_editor.save_file()
         
         # 保存富文本编辑器内容
-        if self.richtext_saved_path and os.path.exists(self.richtext_saved_path):
-            self.auto_save_note()
+        # if self.richtext_saved_path and os.path.exists(self.richtext_saved_path):
+        #     self.auto_save_note()
         
         event.accept()
 

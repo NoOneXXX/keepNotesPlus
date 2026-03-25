@@ -781,6 +781,8 @@ class MainWindow(QMainWindow):
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
         # 连接 Markdown 编辑器信号
         tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
+        # 更新markdown的修改地址
+        tree_widget.update_markdown_obj.connect(self.update_markdown_file_path)
         # 连接思维导图编辑器信号
         tree_widget.open_mindmap_editor.connect(self.open_mindmap_editor)
         # 连接文件重命名信号
@@ -911,6 +913,24 @@ class MainWindow(QMainWindow):
                 self.mindmap_editor.set_file_path(new_mindmap_path)
                 self.path = new_mindmap_path
                 self.update_title()
+
+    @Slot(str)
+    def update_markdown_file_path(self, file_path):
+        """更新 Markdown 文件路径"""
+        full_file_path = None
+        import os
+        editor = JsonEditor()
+        content_type = editor.read_notebook_if_dir(file_path)
+        if content_type == "markdown":
+            full_file_path = os.path.join(file_path, "document.md")
+            self.markdown_editor.set_file_path(full_file_path)
+        elif content_type == "mindmap":
+            pass
+        else:
+            self.richtext_saved_path = file_path
+            full_file_path = file_path
+        self.path = full_file_path
+        self.update_title()
 
     @Slot(str)
     def open_markdown_editor(self, file_path):

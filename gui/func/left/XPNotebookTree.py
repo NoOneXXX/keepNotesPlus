@@ -31,6 +31,7 @@ from ..utils import copy_and_overwrite,get_parent_path
 class XPNotebookTree(QWidget):
     # 信号定义
     open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器，参数为文件路径
+    update_markdown_obj = Signal(str)  # 更新 Markdown 编辑器对象
     open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
     file_renamed = Signal(str, str)     # 文件重命名信号，参数为(旧路径, 新路径)
     
@@ -566,6 +567,8 @@ class XPNotebookTree(QWidget):
 
         item.setText(0, os.path.splitext(new_name)[0])
         item.setData(0, Qt.UserRole, new_path)
+        # 更新markdown对象 防止更换名字后重新创建多个文件
+        self.update_markdown_obj.emit(new_path)
         self._update_child_user_roles(item, old_path, new_path)
 
 

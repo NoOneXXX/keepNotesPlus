@@ -306,111 +306,27 @@ class XPNotebookTree(QWidget):
         if item is None:
             return
 
-        menu = QMenu(self.tree)
-
-        # 获取当前节点的路径和类型
+        # 获取节点信息
         item_path = item.data(0, Qt.UserRole)
         content_type = ""
         detail_info = None
+
         if item_path:
             editor = JsonEditor()
             content_type = editor.read_notebook_if_dir(item_path)
             detail_info = editor.read_file_metadata_infos(item_path)
 
-        # 判断是否是附件类型
-        is_attachment = content_type and content_type.find('attachfile') != -1
-        
-        # 判断是否是 trash 文件夹
-        is_trash_folder = detail_info and detail_info.get('title', '') == 'trash'
-        
-        # 判断是否在 trash 文件夹内
+        # 状态判断
+        is_attachment = content_type and 'attachfile' in content_type
+        is_trash_folder = detail_info and detail_info.get('title') == 'trash'
         is_in_trash = self._is_item_in_trash(item)
 
-        if is_trash_folder:
-            # trash 文件夹的右键菜单：清空回收站
-            empty_trash_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  清空回收站", self)
-            empty_trash_action.triggered.connect(lambda: self.empty_trash(item))
-            menu.addAction(empty_trash_action)
-            
-        elif is_in_trash:
-            # trash 内文件的右键菜单：永久删除、恢复文件
-            permanent_delete_action = QAction(self._create_colored_icon("☠", "#DC2626"), "  永久删除", self)
-            permanent_delete_action.triggered.connect(lambda: self.permanent_delete_item(item))
-            menu.addAction(permanent_delete_action)
-            
-            restore_action = QAction(self._create_colored_icon("↩", "#10B981"), "  恢复文件", self)
-            restore_action.triggered.connect(lambda: self.restore_item(item))
-            menu.addAction(restore_action)
-            
-        elif is_attachment:
-            # 附件类型的右键菜单：复制附件
-            copy_attachment_action = QAction(self._create_colored_icon("📋", "#8B5CF6"), "  复制附件", self)
-            copy_attachment_action.triggered.connect(lambda: self.copy_attachment(item))
-            menu.addAction(copy_attachment_action)
-
-            open_action = QAction(self._create_colored_icon("📂", "#3B82F6"), "  打开", self)
-            open_action.triggered.connect(lambda: self.open_item(item))
-            menu.addAction(open_action)
-
-            rename_action = QAction(self._create_colored_icon("✏", "#F59E0B"), "  重命名", self)
-            rename_action.triggered.connect(lambda: self.rename_item(item))
-            menu.addAction(rename_action)
-
-            delete_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  删除", self)
-            delete_action.triggered.connect(lambda: self.delete_item(item))
-            menu.addAction(delete_action)
-        else:
-            # 普通文件夹/文件的右键菜单
-            open_action = QAction(self._create_colored_icon("📂", "#3B82F6"), "  打开", self)
-            rename_action = QAction(self._create_colored_icon("✏", "#F59E0B"), "  重命名", self)
-            create_file_action = QAction(self._create_colored_icon("📄", "#10B981"), "  创建子文件", self)
-            create_dir_action = QAction(self._create_colored_icon("📁", "#8B5CF6"), "  创建文件夹", self)
-            delete_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  删除", self)
-            adds_on_action = QAction(self._create_colored_icon("📎", "#06B6D4"), "  添加附件", self)
-            # 方法绑定
-            open_action.triggered.connect(lambda: self.open_item(item))
-            rename_action.triggered.connect(lambda: self.rename_item(item))
-            create_file_action.triggered.connect(lambda: self.create_file_item(item))
-            create_dir_action.triggered.connect(lambda: self.create_dir_action(item))
-            delete_action.triggered.connect(lambda: self.delete_item(item))
-            adds_on_action.triggered.connect(lambda: self.adds_on_item(item))
-            # 方法绑定 结束
-            menu.addAction(open_action)
-            menu.addAction(rename_action)
-            menu.addSeparator()
-            menu.addAction(create_file_action)
-            menu.addAction(create_dir_action)
-            menu.addAction(adds_on_action)
-            menu.addSeparator()
-            menu.addAction(delete_action)
-
-        # 使用自定义菜单
+        # 初始化自定义菜单
         menu = ModernContextMenu(self)
 
-        if is_trash_folder:
-            # trash 文件夹的右键菜单：清空回收站
-            menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
-            
-        elif is_in_trash:
-            # trash 内文件的右键菜单：永久删除、恢复文件
-            menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
-            menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
-            
-        elif is_attachment:
-            # 附件类型的右键菜单：复制附件
-            menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
-            menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
-            menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
-            menu.add_separator()
-            menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
-            menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
-            menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
-            menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
-            menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
-            menu.add_separator()
-            menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
-        else:
-            # 普通文件夹/文件的右键菜单
+        # ====================== 公共方法：添加通用菜单 ======================
+        def add_common_actions():
+            """添加所有节点通用的右键菜单（打开、重命名、删除等）"""
             menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
             menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
             menu.add_separator()
@@ -422,7 +338,26 @@ class XPNotebookTree(QWidget):
             menu.add_separator()
             menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
 
-        # 显示菜单
+        # ====================== 根据类型显示菜单 ======================
+        if is_trash_folder:
+            # 回收站根目录：仅清空
+            menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
+
+        elif is_in_trash:
+            # 回收站内部：永久删除 + 恢复
+            menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
+            menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
+
+        elif is_attachment:
+            # 附件：额外加“复制附件”，其他通用
+            menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
+            add_common_actions()
+
+        else:
+            # 普通文件/文件夹：全量通用菜单
+            add_common_actions()
+
+        # 显示
         menu.show_menu(self.tree.viewport().mapToGlobal(point))
 
     '''

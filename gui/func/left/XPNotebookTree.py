@@ -1,19 +1,15 @@
-import re
-import uuid
-import time
+
 import json
 from pathlib import Path
-
 from gui.func.left.dropItemEvent import CustomTreeWidget
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
-from gui.ui import resource_rc
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
-    QTreeWidgetItem, QStyleFactory, QMessageBox, QHeaderView, QMenu, QInputDialog, QFileDialog,
+    QTreeWidgetItem, QStyleFactory, QMessageBox, QHeaderView, QInputDialog, QFileDialog,
     QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QDialog, QPushButton
 )
-from PySide6.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QAction, QImage, QTextDocument, QCursor
-from PySide6.QtCore import Qt, Slot, QUrl, QMimeData, QTimer, QPropertyAnimation, QEasingCurve, Property, Signal
+from PySide6.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QCursor
+from PySide6.QtCore import Qt, Slot, QUrl, QMimeData, QTimer, QPropertyAnimation, QEasingCurve, Signal
 import sys
 import os
 from gui.func.singel_pkg.single_manager import sm
@@ -73,7 +69,12 @@ class XPNotebookTree(QWidget):
         self.tree.setHeaderHidden(True)
         self.tree.setRootIsDecorated(True)
         self.tree.setIndentation(16)
+        self.tree.setAnimated(True)
 
+        self.tree.setIndentation(22)  # 建议保持 22~24
+
+        # 建议同时调整缩进，让线条有呼吸空间
+        self.tree.setIndentation(22)  # 原16可以改成20~24，看起来更舒服
         # === 添加拖拽支持 ===
         self.tree.setDragEnabled(True)  # 允许节点被拖动
         self.tree.setAcceptDrops(True)  # 允许将其他节点拖到该树上

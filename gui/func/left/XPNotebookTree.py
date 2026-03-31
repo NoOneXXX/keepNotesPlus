@@ -1294,9 +1294,6 @@ class XPNotebookTree(QWidget):
         # 先创建临时文件夹名，避免创建失败后留下残留
         temp_file_path = file_path
         created_folder = False
-        created_metadata = False
-        created_md = False
-        
         try:
             # 将它的父类改成 has_children true
             editor = JsonEditor()
@@ -1314,13 +1311,12 @@ class XPNotebookTree(QWidget):
             
             # 创建 Markdown 类型的 metadata
             create_metadata_file_under_dir(file_path, content_type='markdown', order_file_num=max_order_num_by_child_dir)
-            created_metadata = True
-            
+
             # 创建空的 Markdown 文件
             md_path = os.path.join(file_path, "document.md")
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(f"# {name}\n\n")
-            created_md = True
+
 
             new_item = QTreeWidgetItem()
             new_item.setText(0, name)
@@ -1469,11 +1465,12 @@ class XPNotebookTree(QWidget):
     '''重新排序'''
     def reorder_tree(self, parent_item, orders_by_file = 0):
         items = []
+        editor = JsonEditor()
         for i in range(parent_item.childCount()):
             item = parent_item.child(i)
-            order = item.data(0, Qt.UserRole + 2) or 0
-            if order == 0:
-                order = orders_by_file
+            path = item.data(0, Qt.UserRole)
+            metadata = editor.read_node_infos(path)
+            order = metadata['node']['detail_info']['order']
             items.append((item, order))
 
         # 按 order 排序

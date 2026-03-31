@@ -1264,7 +1264,7 @@ class XPNotebookTree(QWidget):
             item.addChild(new_item)
             item.setExpanded(True)
             # 重新排序
-            self.reorder_tree(item,max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             self.tree.editItem(new_item, 0)
@@ -1331,7 +1331,7 @@ class XPNotebookTree(QWidget):
             item.addChild(new_item)
             item.setExpanded(True)
             # 重新排序
-            self.reorder_tree(item, max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             self.tree.editItem(new_item, 0)
@@ -1412,7 +1412,7 @@ class XPNotebookTree(QWidget):
             item.addChild(new_item)
             item.setExpanded(True)
             # 重新排序
-            self.reorder_tree(item, max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             
@@ -1463,7 +1463,7 @@ class XPNotebookTree(QWidget):
         self.reorder_tree(parent_item)
 
     '''重新排序'''
-    def reorder_tree(self, parent_item, orders_by_file = 0):
+    def reorder_tree(self, parent_item):
         items = []
         editor = JsonEditor()
         for i in range(parent_item.childCount()):
@@ -1524,7 +1524,7 @@ class XPNotebookTree(QWidget):
             item.setExpanded(True)
             item.addChild(new_item)
             # 重新排序
-            self.reorder_tree(item, max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             self.tree.editItem(new_item, 0)
@@ -1680,7 +1680,7 @@ class XPNotebookTree(QWidget):
                 item.addChild(new_item)
                 item.setExpanded(True)
                 # 重新排序
-                self.reorder_tree(item, max_order_num_by_child_dir)
+                self.reorder_tree(item)
                 self.tree.setCurrentItem(new_item)
                 self.tree.editItem(new_item, 0)
 

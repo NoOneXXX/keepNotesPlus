@@ -55,6 +55,15 @@ class NoteDB:
         ''', (limit,))
         return [row[0] for row in cursor.fetchall()]
 
+    '''更新笔记本打开时间'''
+    def update_notebook_last_opened(self, path: str):
+        self.conn.execute('''
+            UPDATE recent_notebooks
+            SET last_opened_time = CURRENT_TIMESTAMP
+            WHERE path = ?
+        ''', (path,))
+        self.conn.commit()
+
     '''删除这个最近的笔记本 如果找不到就删除'''
     def delete_recent_notebook(self, path):
         self.conn.execute('''

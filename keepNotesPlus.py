@@ -781,6 +781,8 @@ class MainWindow(QMainWindow):
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
         # 连接 Markdown 编辑器信号
         tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
+        # 更新markdown的修改地址
+        tree_widget.update_markdown_obj.connect(self.update_markdown_file_path)
         # 连接思维导图编辑器信号
         tree_widget.open_mindmap_editor.connect(self.open_mindmap_editor)
         # 连接文件重命名信号
@@ -911,6 +913,24 @@ class MainWindow(QMainWindow):
                 self.mindmap_editor.set_file_path(new_mindmap_path)
                 self.path = new_mindmap_path
                 self.update_title()
+
+    @Slot(str)
+    def update_markdown_file_path(self, file_path):
+        """更新 Markdown 文件路径"""
+        full_file_path = None
+        import os
+        editor = JsonEditor()
+        content_type = editor.read_notebook_if_dir(file_path)
+        if content_type == "markdown":
+            full_file_path = os.path.join(file_path, "document.md")
+            self.markdown_editor.set_file_path(full_file_path)
+        elif content_type == "mindmap":
+            pass
+        else:
+            self.richtext_saved_path = file_path
+            full_file_path = file_path
+        self.path = full_file_path
+        self.update_title()
 
     @Slot(str)
     def open_markdown_editor(self, file_path):
@@ -1075,18 +1095,19 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'markdown_editor') and self.markdown_editor and self.markdown_editor.md_file_path:
             # 直接调用 save_file，不检查 is_modified，确保内容一定被保存
             current_md_path = self.markdown_editor.md_file_path
-            logger.info(f"窗口关闭前保存 Markdown 文件: {current_md_path}")
-            save_result = self.markdown_editor.save_file()
-            if not save_result:
-                logger.error(f"窗口关闭时保存 Markdown 文件失败: {current_md_path}")
+            if os.path.exists(current_md_path):
+                logger.info(f"窗口关闭前保存 Markdown 文件: {current_md_path}")
+                save_result = self.markdown_editor.save_file()
+                if not save_result:
+                    logger.error(f"窗口关闭时保存 Markdown 文件失败: {current_md_path}")
         
         # 保存思维导图编辑器内容
-        if hasattr(self, 'mindmap_editor') and self.mindmap_editor and self.mindmap_editor.mindmap_file_path:
+        if hasattr(self, 'mindmap_editor') and self.mindmap_editor and self.mindmap_editor.mindmap_file_path and os.path.exists(self.mindmap_editor.mindmap_file_path):
             self.mindmap_editor.save_file()
         
         # 保存富文本编辑器内容
-        if self.richtext_saved_path:
-            self.auto_save_note()
+        # if self.richtext_saved_path and os.path.exists(self.richtext_saved_path):
+        #     self.auto_save_note()
         
         event.accept()
 

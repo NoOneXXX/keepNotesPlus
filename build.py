@@ -64,7 +64,7 @@ if os.path.exists(pdfjs_dir):
 cmd_args.append("--include-package=pygments")
 
 cmd_args.append("--follow-import-to=gui")
-cmd_args.append("main.py")
+cmd_args.append("keepNotesPlus.py")
 cmd_args.append("--lto=no")
 
 # 打印命令

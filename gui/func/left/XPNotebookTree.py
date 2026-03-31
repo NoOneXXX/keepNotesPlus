@@ -31,6 +31,7 @@ from ..utils import copy_and_overwrite,get_parent_path
 class XPNotebookTree(QWidget):
     # 信号定义
     open_markdown_editor = Signal(str)  # 打开 Markdown 编辑器，参数为文件路径
+    update_markdown_obj = Signal(str)  # 更新 Markdown 编辑器对象
     open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
     file_renamed = Signal(str, str)     # 文件重命名信号，参数为(旧路径, 新路径)
     
@@ -305,104 +306,27 @@ class XPNotebookTree(QWidget):
         if item is None:
             return
 
-        menu = QMenu(self.tree)
-
-        # 获取当前节点的路径和类型
+        # 获取节点信息
         item_path = item.data(0, Qt.UserRole)
         content_type = ""
         detail_info = None
+
         if item_path:
             editor = JsonEditor()
             content_type = editor.read_notebook_if_dir(item_path)
             detail_info = editor.read_file_metadata_infos(item_path)
 
-        # 判断是否是附件类型
-        is_attachment = content_type and content_type.find('attachfile') != -1
-        
-        # 判断是否是 trash 文件夹
-        is_trash_folder = detail_info and detail_info.get('title', '') == 'trash'
-        
-        # 判断是否在 trash 文件夹内
+        # 状态判断
+        is_attachment = content_type and 'attachfile' in content_type
+        is_trash_folder = detail_info and detail_info.get('title') == 'trash'
         is_in_trash = self._is_item_in_trash(item)
 
-        if is_trash_folder:
-            # trash 文件夹的右键菜单：清空回收站
-            empty_trash_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  清空回收站", self)
-            empty_trash_action.triggered.connect(lambda: self.empty_trash(item))
-            menu.addAction(empty_trash_action)
-            
-        elif is_in_trash:
-            # trash 内文件的右键菜单：永久删除、恢复文件
-            permanent_delete_action = QAction(self._create_colored_icon("☠", "#DC2626"), "  永久删除", self)
-            permanent_delete_action.triggered.connect(lambda: self.permanent_delete_item(item))
-            menu.addAction(permanent_delete_action)
-            
-            restore_action = QAction(self._create_colored_icon("↩", "#10B981"), "  恢复文件", self)
-            restore_action.triggered.connect(lambda: self.restore_item(item))
-            menu.addAction(restore_action)
-            
-        elif is_attachment:
-            # 附件类型的右键菜单：复制附件
-            copy_attachment_action = QAction(self._create_colored_icon("📋", "#8B5CF6"), "  复制附件", self)
-            copy_attachment_action.triggered.connect(lambda: self.copy_attachment(item))
-            menu.addAction(copy_attachment_action)
-
-            open_action = QAction(self._create_colored_icon("📂", "#3B82F6"), "  打开", self)
-            open_action.triggered.connect(lambda: self.open_item(item))
-            menu.addAction(open_action)
-
-            rename_action = QAction(self._create_colored_icon("✏", "#F59E0B"), "  重命名", self)
-            rename_action.triggered.connect(lambda: self.rename_item(item))
-            menu.addAction(rename_action)
-
-            delete_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  删除", self)
-            delete_action.triggered.connect(lambda: self.delete_item(item))
-            menu.addAction(delete_action)
-        else:
-            # 普通文件夹/文件的右键菜单
-            open_action = QAction(self._create_colored_icon("📂", "#3B82F6"), "  打开", self)
-            rename_action = QAction(self._create_colored_icon("✏", "#F59E0B"), "  重命名", self)
-            create_file_action = QAction(self._create_colored_icon("📄", "#10B981"), "  创建子文件", self)
-            create_dir_action = QAction(self._create_colored_icon("📁", "#8B5CF6"), "  创建文件夹", self)
-            delete_action = QAction(self._create_colored_icon("🗑", "#EF4444"), "  删除", self)
-            adds_on_action = QAction(self._create_colored_icon("📎", "#06B6D4"), "  添加附件", self)
-            # 方法绑定
-            open_action.triggered.connect(lambda: self.open_item(item))
-            rename_action.triggered.connect(lambda: self.rename_item(item))
-            create_file_action.triggered.connect(lambda: self.create_file_item(item))
-            create_dir_action.triggered.connect(lambda: self.create_dir_action(item))
-            delete_action.triggered.connect(lambda: self.delete_item(item))
-            adds_on_action.triggered.connect(lambda: self.adds_on_item(item))
-            # 方法绑定 结束
-            menu.addAction(open_action)
-            menu.addAction(rename_action)
-            menu.addSeparator()
-            menu.addAction(create_file_action)
-            menu.addAction(create_dir_action)
-            menu.addAction(adds_on_action)
-            menu.addSeparator()
-            menu.addAction(delete_action)
-
-        # 使用自定义菜单
+        # 初始化自定义菜单
         menu = ModernContextMenu(self)
 
-        if is_trash_folder:
-            # trash 文件夹的右键菜单：清空回收站
-            menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
-            
-        elif is_in_trash:
-            # trash 内文件的右键菜单：永久删除、恢复文件
-            menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
-            menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
-            
-        elif is_attachment:
-            # 附件类型的右键菜单：复制附件
-            menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
-            menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
-            menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
-            menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
-        else:
-            # 普通文件夹/文件的右键菜单
+        # ====================== 公共方法：添加通用菜单 ======================
+        def add_common_actions():
+            """添加所有节点通用的右键菜单（打开、重命名、删除等）"""
             menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
             menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
             menu.add_separator()
@@ -414,7 +338,26 @@ class XPNotebookTree(QWidget):
             menu.add_separator()
             menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
 
-        # 显示菜单
+        # ====================== 根据类型显示菜单 ======================
+        if is_trash_folder:
+            # 回收站根目录：仅清空
+            menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
+
+        elif is_in_trash:
+            # 回收站内部：永久删除 + 恢复
+            menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
+            menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
+
+        elif is_attachment:
+            # 附件：额外加“复制附件”，其他通用
+            menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
+            add_common_actions()
+
+        else:
+            # 普通文件/文件夹：全量通用菜单
+            add_common_actions()
+
+        # 显示
         menu.show_menu(self.tree.viewport().mapToGlobal(point))
 
     '''
@@ -559,6 +502,8 @@ class XPNotebookTree(QWidget):
 
         item.setText(0, os.path.splitext(new_name)[0])
         item.setData(0, Qt.UserRole, new_path)
+        # 更新markdown对象 防止更换名字后重新创建多个文件
+        self.update_markdown_obj.emit(new_path)
         self._update_child_user_roles(item, old_path, new_path)
 
 
@@ -745,7 +690,7 @@ class XPNotebookTree(QWidget):
                     try:
                         for f in os.listdir(original_parent_path):
                             # 跳过隐藏文件和.metadata.json
-                            if f.startswith('.') or f == '.metadata.json':
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
                                 continue
                             full_path = os.path.join(original_parent_path, f)
                             if os.path.isdir(full_path):
@@ -824,7 +769,7 @@ class XPNotebookTree(QWidget):
                     try:
                         for f in os.listdir(parent_path):
                             # 跳过隐藏文件和.metadata.json
-                            if f.startswith('.') or f == '.metadata.json':
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
                                 continue
                             full_path = os.path.join(parent_path, f)
                             if os.path.isdir(full_path):
@@ -901,7 +846,7 @@ class XPNotebookTree(QWidget):
                     try:
                         for f in os.listdir(trash_path):
                             # 跳过隐藏文件和.metadata.json
-                            if f.startswith('.') or f == '.metadata.json':
+                            if f.startswith('.') or f == '.metadata.json' or f.lower() == 'images':
                                 continue
                             full_path = os.path.join(trash_path, f)
                             if os.path.isdir(full_path):
@@ -1319,7 +1264,7 @@ class XPNotebookTree(QWidget):
             item.addChild(new_item)
             item.setExpanded(True)
             # 重新排序
-            self.reorder_tree(item,max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             self.tree.editItem(new_item, 0)
@@ -1349,9 +1294,6 @@ class XPNotebookTree(QWidget):
         # 先创建临时文件夹名，避免创建失败后留下残留
         temp_file_path = file_path
         created_folder = False
-        created_metadata = False
-        created_md = False
-        
         try:
             # 将它的父类改成 has_children true
             editor = JsonEditor()
@@ -1369,13 +1311,12 @@ class XPNotebookTree(QWidget):
             
             # 创建 Markdown 类型的 metadata
             create_metadata_file_under_dir(file_path, content_type='markdown', order_file_num=max_order_num_by_child_dir)
-            created_metadata = True
-            
+
             # 创建空的 Markdown 文件
             md_path = os.path.join(file_path, "document.md")
             with open(md_path, "w", encoding="utf-8") as f:
                 f.write(f"# {name}\n\n")
-            created_md = True
+
 
             new_item = QTreeWidgetItem()
             new_item.setText(0, name)
@@ -1390,7 +1331,7 @@ class XPNotebookTree(QWidget):
             item.addChild(new_item)
             item.setExpanded(True)
             # 重新排序
-            self.reorder_tree(item, max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             self.tree.editItem(new_item, 0)
@@ -1471,7 +1412,7 @@ class XPNotebookTree(QWidget):
             item.addChild(new_item)
             item.setExpanded(True)
             # 重新排序
-            self.reorder_tree(item, max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             
@@ -1522,13 +1463,14 @@ class XPNotebookTree(QWidget):
         self.reorder_tree(parent_item)
 
     '''重新排序'''
-    def reorder_tree(self, parent_item, orders_by_file = 0):
+    def reorder_tree(self, parent_item):
         items = []
+        editor = JsonEditor()
         for i in range(parent_item.childCount()):
             item = parent_item.child(i)
-            order = item.data(0, Qt.UserRole + 2) or 0
-            if order == 0:
-                order = orders_by_file
+            path = item.data(0, Qt.UserRole)
+            metadata = editor.read_node_infos(path)
+            order = metadata['node']['detail_info']['order']
             items.append((item, order))
 
         # 按 order 排序
@@ -1582,7 +1524,7 @@ class XPNotebookTree(QWidget):
             item.setExpanded(True)
             item.addChild(new_item)
             # 重新排序
-            self.reorder_tree(item, max_order_num_by_child_dir)
+            self.reorder_tree(item)
 
             self.tree.setCurrentItem(new_item)
             self.tree.editItem(new_item, 0)
@@ -1738,7 +1680,7 @@ class XPNotebookTree(QWidget):
                 item.addChild(new_item)
                 item.setExpanded(True)
                 # 重新排序
-                self.reorder_tree(item, max_order_num_by_child_dir)
+                self.reorder_tree(item)
                 self.tree.setCurrentItem(new_item)
                 self.tree.editItem(new_item, 0)
 

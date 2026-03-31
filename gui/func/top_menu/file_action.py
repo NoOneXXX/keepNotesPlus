@@ -134,7 +134,8 @@ class FileActions:
                 self.note_db.delete_recent_notebook(metadata_path)
                 QMessageBox.warning(self.parent, "打开失败", "该目录不是有效的笔记本")
                 return
-
+            # 更新这个打开的时间
+            self.note_db.update_notebook_last_opened(path)
             sm.left_tree_structure_rander_after_create_new_notebook_signal.emit(path)
         else:
             # 失败了就删除

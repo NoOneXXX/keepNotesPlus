@@ -14,7 +14,7 @@ pyside6-uic pyside6-mainwindow.ui -o ui_main_window.py
 pyside6-rcc gui/ui/resource.qrc -o gui/ui/resource_rc.py
 ```
 
-## 上面两步执行完成后就直接的执行下面命令打包
+## 上面两步执行完成后就直接的执行下面命令打包，mac和window都可以用下面的命令打包，只是mac版本的要在mac电脑上操作，windows版本的要在window系统上操作
 ```shell
 python build.py
 ```

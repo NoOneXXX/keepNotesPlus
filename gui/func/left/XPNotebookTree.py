@@ -71,10 +71,38 @@ class XPNotebookTree(QWidget):
         self.tree.setIndentation(16)
         self.tree.setAnimated(True)
 
-        self.tree.setIndentation(22)  # 建议保持 22~24
+        # Apply this stylesheet to your QTreeWidget
+        current_dir = os.path.dirname(os.path.abspath(__file__)).replace('\\', '/')
+        self.tree.setStyleSheet(f"""
+            QTreeView::branch:has-siblings:!adjoins-item {{
+                image: url({current_dir}/vline.png);
+            }}
+            QTreeView::branch:has-siblings:adjoins-item {{
+                image: url({current_dir}/branch-more.png);
+            }}
+            QTreeView::branch:!has-children:!has-siblings:adjoins-item {{
+                image: url({current_dir}/branch-end.png);
+            }}
+            QTreeView::branch:has-children:has-siblings:closed,
+            QTreeView::branch:closed:has-children:has-siblings {{
+                image: url({current_dir}/branch-closed.png);
+            }}
+            QTreeView::branch:open:has-children:has-siblings,
+            QTreeView::branch:open:has-children:!has-siblings {{
+                image: url({current_dir}/branch-open.png);
+            }}
 
-        # 建议同时调整缩进，让线条有呼吸空间
-        self.tree.setIndentation(22)  # 原16可以改成20~24，看起来更舒服
+            /* 修复：没有兄弟节点（最后一个节点）且是折叠状态 */
+            QTreeView::branch:!has-siblings:adjoins-item:has-children:closed {{
+                image: url({current_dir}/branch-closed.png);
+            }}
+
+            /* 修复：没有兄弟节点（最后一个节点）且是展开状态 */
+            QTreeView::branch:!has-siblings:adjoins-item:has-children:open {{
+                image: url({current_dir}/branch-open.png);
+            }}
+        """)
+
         # === 添加拖拽支持 ===
         self.tree.setDragEnabled(True)  # 允许节点被拖动
         self.tree.setAcceptDrops(True)  # 允许将其他节点拖到该树上

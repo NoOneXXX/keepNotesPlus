@@ -72,36 +72,35 @@ class XPNotebookTree(QWidget):
         self.tree.setAnimated(True)
 
         # Apply this stylesheet to your QTreeWidget
-        current_dir = os.path.dirname(os.path.abspath(__file__)).replace('\\', '/')
-        self.tree.setStyleSheet(f"""
-            QTreeView::branch:has-siblings:!adjoins-item {{
-                image: url({current_dir}/vline.png);
-            }}
-            QTreeView::branch:has-siblings:adjoins-item {{
-                image: url({current_dir}/branch-more.png);
-            }}
-            QTreeView::branch:!has-children:!has-siblings:adjoins-item {{
-                image: url({current_dir}/branch-end.png);
-            }}
-            QTreeView::branch:has-children:has-siblings:closed,
-            QTreeView::branch:closed:has-children:has-siblings {{
-                image: url({current_dir}/branch-closed.png);
-            }}
-            QTreeView::branch:open:has-children:has-siblings,
-            QTreeView::branch:open:has-children:!has-siblings {{
-                image: url({current_dir}/branch-open.png);
-            }}
+        self.tree.setStyleSheet("""
+                    QTreeView::branch:has-siblings:!adjoins-item {
+                        image: url(:images/branch/vline.png);
+                    }
+                    QTreeView::branch:has-siblings:adjoins-item {
+                        image: url(:images/branch/branch-more.png);
+                    }
+                    QTreeView::branch:!has-children:!has-siblings:adjoins-item {
+                        image: url(:images/branch/branch-end.png);
+                    }
+                    QTreeView::branch:has-children:has-siblings:closed,
+                    QTreeView::branch:closed:has-children:has-siblings {
+                        image: url(:images/branch/branch-closed.png);
+                    }
+                    QTreeView::branch:open:has-children:has-siblings,
+                    QTreeView::branch:open:has-children:!has-siblings {
+                        image: url(:images/branch/branch-open.png);
+                    }
 
-            /* 修复：没有兄弟节点（最后一个节点）且是折叠状态 */
-            QTreeView::branch:!has-siblings:adjoins-item:has-children:closed {{
-                image: url({current_dir}/branch-closed.png);
-            }}
+                    /* 修复：没有兄弟节点（最后一个节点）且是折叠状态 */
+                    QTreeView::branch:!has-siblings:adjoins-item:has-children:closed {
+                        image: url(:images/branch/branch-closed.png);
+                    }
 
-            /* 修复：没有兄弟节点（最后一个节点）且是展开状态 */
-            QTreeView::branch:!has-siblings:adjoins-item:has-children:open {{
-                image: url({current_dir}/branch-open.png);
-            }}
-        """)
+                    /* 修复：没有兄弟节点（最后一个节点）且是展开状态 */
+                    QTreeView::branch:!has-siblings:adjoins-item:has-children:open {
+                        image: url(:images/branch/branch-open.png);
+                    }
+                """)
 
         # === 添加拖拽支持 ===
         self.tree.setDragEnabled(True)  # 允许节点被拖动
@@ -1835,7 +1834,7 @@ class ModernContextMenu(QWidget):
         
         # 设置鼠标追踪
         self.setMouseTracking(True)
-        
+
     def add_action(self, icon_text, text, callback, color="#4B5563"):
         """添加菜单项"""
         self.actions.append({
@@ -1863,7 +1862,7 @@ class ModernContextMenu(QWidget):
         self.setFixedSize(self.min_width, total_height)
         self.move(pos)
         self.show()
-        
+
     def paintEvent(self, event):
         from PySide6.QtGui import QPainter, QFont, QPen, QBrush, QPainterPath, QLinearGradient
         

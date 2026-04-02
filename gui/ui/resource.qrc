@@ -38,5 +38,12 @@
     <file alias="e-book.png">../images/tree/e-book.png</file>
     <file alias="notes.png">../images/tree/notes.png</file>
     <file alias="markdown.png">../images/markdown.png</file>
+
+    <!-- branch 树形控件虚线样式图片 -->
+    <file alias="branch/vline.png">../images/branch/vline.png</file>
+    <file alias="branch/branch-more.png">../images/branch/branch-more.png</file>
+    <file alias="branch/branch-end.png">../images/branch/branch-end.png</file>
+    <file alias="branch/branch-closed.png">../images/branch/branch-closed.png</file>
+    <file alias="branch/branch-open.png">../images/branch/branch-open.png</file>
   </qresource>
 </RCC>

@@ -1,4 +1,5 @@
 import sys
+import os
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap, QPainter, QColor, QPen, QPolygon
 from PySide6.QtCore import Qt, QPoint
@@ -9,6 +10,13 @@ def generate_tree_icons(color_hex="#555555", size=20, vline_height=None):
     mid = size // 2
     # vline 的高度，默认是 size 的3倍（更长）
     vline_h = vline_height if vline_height else size * 3
+    
+    # 获取输出目录路径：gui/images/branch/
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.normpath(os.path.join(current_dir, "../../../images/branch"))
+    
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
 
     # Helper to setup painter
     def get_painter(pix):
@@ -27,7 +35,7 @@ def generate_tree_icons(color_hex="#555555", size=20, vline_height=None):
     painter = get_painter(vline)
     painter.drawLine(mid, 0, mid, vline_h)
     painter.end()
-    vline.save("vline.png")
+    vline.save(os.path.join(output_dir, "vline.png"))
 
     # 2. branch-more.png (T-shape) - 竖线与vline对齐，横线位置调整
     branch_width = size * 2  # 宽度40像素
@@ -44,7 +52,7 @@ def generate_tree_icons(color_hex="#555555", size=20, vline_height=None):
     hline_offset = 15  # 横线向下偏移2像素，与文件图标对齐
     painter.drawLine(mid + vline_offset, mid + hline_offset, branch_width - 2, mid + hline_offset)  # 横线
     painter.end()
-    more.save("branch-more.png")
+    more.save(os.path.join(output_dir, "branch-more.png"))
 
     # 3. branch-end.png (L-shape) - 独立参数配置，可单独调试
     # branch-end 图片宽度设置：控制整个图片的宽度
@@ -85,10 +93,10 @@ def generate_tree_icons(color_hex="#555555", size=20, vline_height=None):
         end_hline_length, mid + end_hline_offset  # 终点：横线长度参数控制的位置
     )
     painter.end()
-    end.save("branch-end.png")
+    end.save(os.path.join(output_dir, "branch-end.png"))
 
 
-    print("Successfully generated: vline, branch-more, branch-end, branch-closed, branch-open")
+    print(f"Successfully generated: vline, branch-more, branch-end -> {output_dir}")
 
 if __name__ == "__main__":
     generate_tree_icons("#008B8B") # 黑色，与左边图片一致

@@ -1,4 +1,5 @@
 import sys
+import os
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt, QRect
@@ -6,6 +7,13 @@ from PySide6.QtCore import Qt, QRect
 
 def generate_final_fine_tuned_icons():
     app = QApplication.instance() or QApplication(sys.argv)
+
+    # 获取输出目录路径：gui/images/branch/
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    output_dir = os.path.normpath(os.path.join(current_dir, "../../../images/branch"))
+    
+    # 确保输出目录存在
+    os.makedirs(output_dir, exist_ok=True)
 
     # 画布尺寸保持 19x31
     W, H = 19, 31
@@ -31,7 +39,7 @@ def generate_final_fine_tuned_icons():
     # 颜色定义 (保持不变)
     MAGENTA = QColor("#FF00FF")
     WHITE = QColor("#FFFFFF")
-    CYAN = QColor("#00E5C0")
+    CYAN = QColor("#000000")
 
     def draw_icon(mode="plus"):
         pix = QPixmap(W, H)
@@ -69,10 +77,10 @@ def generate_final_fine_tuned_icons():
         return pix
 
     # 保存文件
-    draw_icon("plus").save("branch-closed.png")
-    draw_icon("minus").save("branch-open.png")
+    draw_icon("plus").save(os.path.join(output_dir, "branch-closed.png"))
+    draw_icon("minus").save(os.path.join(output_dir, "branch-open.png"))
 
-    print(f"图标已生成！当前参数：水平右移 {offset_x}px, 垂直高度 y={offset_y}")
+    print(f"图标已生成！当前参数：水平右移 {offset_x}px, 垂直高度 y={offset_y} -> {output_dir}")
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ def generate_tree_icons(color_hex="#555555", size=20, vline_height=None):
         p = QPainter(pix)
         p.setRenderHint(QPainter.Antialiasing)
         # 使用自定义点状线：1像素实线 + 2像素空白，形成明显的点状效果
-        pen = QPen(color, 1.5)
+        pen = QPen(color, 2)
         pen.setStyle(Qt.CustomDashLine)
         pen.setDashPattern([1, 2])  # 1像素点，2像素间隔
         p.setPen(pen)

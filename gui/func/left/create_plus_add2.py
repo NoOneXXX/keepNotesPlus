@@ -1,73 +1,72 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QPixmap, QPainter, QColor, QPen
+from PySide6.QtGui import QPixmap, QPainter, QColor
 from PySide6.QtCore import Qt, QRect
 
 
-def generate_perfect_icons(size=15):
+def generate_shifted_up_icons():
     app = QApplication.instance() or QApplication(sys.argv)
 
-    # --- 推荐的高级配色方案 ---
-    main_color = QColor("#FF00FF")  # 边框和符号：深炭灰（清晰、有力）
-    bg_color = QColor("#FFFFFF")  # 方框填充：纯白（保证加号对比度最高）
-    line_color = QColor("#00E5C0")
+    # 画布尺寸：宽15，高25
+    W, H = 15, 25
 
-    mid = size // 2
-    box_size = 8
-    offset = box_size // 2
+    # 颜色定义
+    MAGENTA = QColor("#FF00FF")  # 方框和符号
+    WHITE = QColor("#FFFFFF")  # 内部背景
+    CYAN = QColor("#00E5C0")  # 顶部虚线
 
-    def draw_box(painter):
-        painter.setRenderHint(QPainter.Antialiasing, False)
-        # 使用 main_color 画边框，bg_color 填充
-        painter.setPen(QPen(main_color, 1, Qt.SolidLine))
-        painter.setBrush(bg_color)
-        rect = QRect(mid - offset, mid - offset, box_size, box_size)
-        painter.drawRect(rect)
-        return rect
-
-    # --- 1. 生成 branch-closed.png [+] ---
-    closed = QPixmap(size, size)
-    closed.fill(Qt.transparent)
-    p = QPainter(closed)
-    draw_box(p)
-    p.setPen(QPen(main_color, 1, Qt.SolidLine))
-    p.drawLine(mid - 2, mid, mid + 2, mid)
-    p.drawLine(mid, mid - 2, mid, mid + 2)
-    p.end()
-    closed.save("branch-closed.png")
-
-    # --- 2. 生成 branch-open.png [-] ---
-    opened = QPixmap(size, size)
-    opened.fill(Qt.transparent)
-    p = QPainter(opened)
-    draw_box(p)
-    p.setPen(QPen(main_color, 1, Qt.SolidLine))
-    p.drawLine(mid - 2, mid, mid + 2, mid)
-    p.end()
-    opened.save("branch-open.png")
-
-    # --- 3. 生成 vline, more, end (使用较浅的 line_color) ---
-    def draw_branch(name, type):
-        pix = QPixmap(size, size)
+    def draw_pixel_icon(mode="plus"):
+        pix = QPixmap(W, H)
         pix.fill(Qt.transparent)
         p = QPainter(pix)
-        # 这里的线色调淡，让层级结构看起来更轻量
-        p.setPen(QPen(line_color, 1, Qt.DotLine))
-        if type == "more":
-            p.drawLine(mid, 0, mid, size)
-            p.drawLine(mid, mid, size, mid)
-        elif type == "end":
-            p.drawLine(mid, 0, mid, mid)
-            p.drawLine(mid, mid, size, mid)
+
+        # 禁用抗锯齿，确保物理像素对齐
+        p.setRenderHint(QPainter.Antialiasing, False)
+
+        # 1. 绘制顶部虚线 (中心列 x=7)
+        p.setPen(CYAN)
+        # 虚线绘制到 y=7
+        for y in range(0, 8, 2):
+            p.drawPoint(7, y)
+
+        # 2. 定义方框尺寸 (11x11)
+        # bx=2 保持左右居中
+        # by=8 将整体位置再次向上移动2个像素
+        bx, by, bs = 2, 8, 11
+
+        # 填充白色背景
+        p.fillRect(QRect(bx, by, bs, bs), WHITE)
+
+        # 3. 绘制 1 像素洋红边框
+        p.setPen(MAGENTA)
+        p.setBrush(Qt.NoBrush)
+        p.drawRect(bx, by, bs - 1, bs - 1)
+
+        # 4. 绘制内部符号 (中心点随方框同步上移2像素)
+        # 原 cy=15 -> 现 cy=13
+        cx, cy = 7, 13
+
+        p.setPen(MAGENTA)
+        if mode == "plus":
+            # 十字：长度为 5
+            p.drawLine(cx - 2, cy, cx + 2, cy)
+            p.drawLine(cx, cy - 2, cx, cy + 2)
+        else:
+            # 减号
+            p.drawLine(cx - 2, cy, cx + 2, cy)
+
         p.end()
-        pix.save(name)
+        return pix
 
+    # 执行保存
+    draw_icon_plus = draw_pixel_icon("plus")
+    draw_icon_plus.save("branch-closed.png")
 
-    draw_branch("branch-more.png", "more")
-    draw_branch("branch-end.png", "end")
+    draw_icon_minus = draw_pixel_icon("minus")
+    draw_icon_minus.save("branch-open.png")
 
-    print(f"Elegant icons generated with Main:{main_color.name()} and Line:{line_color.name()}")
+    print("整体上移版已生成：方框起始位置 y=8，内部符号中心 y=13。")
 
 
 if __name__ == "__main__":
-    generate_perfect_icons()
+    generate_shifted_up_icons()

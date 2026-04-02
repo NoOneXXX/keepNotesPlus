@@ -91,4 +91,4 @@ def generate_tree_icons(color_hex="#555555", size=20, vline_height=None):
     print("Successfully generated: vline, branch-more, branch-end, branch-closed, branch-open")
 
 if __name__ == "__main__":
-    generate_tree_icons("#000000") # 黑色，与左边图片一致
+    generate_tree_icons("#008B8B") # 黑色，与左边图片一致

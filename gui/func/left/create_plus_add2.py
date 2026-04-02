@@ -11,9 +11,6 @@ def generate_perfect_icons(size=15):
     main_color = QColor("#FF00FF")  # 边框和符号：深炭灰（清晰、有力）
     bg_color = QColor("#FFFFFF")  # 方框填充：纯白（保证加号对比度最高）
     line_color = QColor("#00E5C0")
-    vline_color = QColor("#9CA3AF")  # 柔和深灰（vline 保持低调）
-    more_color = QColor("#FF4D94")  # 亮粉/玫红（非常醒目、活力）
-    end_color = QColor("#00E5C0")
 
     mid = size // 2
     box_size = 8
@@ -56,9 +53,7 @@ def generate_perfect_icons(size=15):
         p = QPainter(pix)
         # 这里的线色调淡，让层级结构看起来更轻量
         p.setPen(QPen(line_color, 1, Qt.DotLine))
-        if type == "vline":
-            p.drawLine(mid, 0, mid, size)
-        elif type == "more":
+        if type == "more":
             p.drawLine(mid, 0, mid, size)
             p.drawLine(mid, mid, size, mid)
         elif type == "end":
@@ -67,7 +62,7 @@ def generate_perfect_icons(size=15):
         p.end()
         pix.save(name)
 
-    draw_branch("vline.png", "vline")
+
     draw_branch("branch-more.png", "more")
     draw_branch("branch-end.png", "end")
 

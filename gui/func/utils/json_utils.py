@@ -26,6 +26,7 @@ class JsonEditor:
                     "open_dir_icon": ":images/folder-orange-open.png",
                     "close_dir_icon": ":images/folder-orange.png",
                     "adds_on_icon": "",
+                    "tip": "",
                     "font_color": ""
                 }
             }

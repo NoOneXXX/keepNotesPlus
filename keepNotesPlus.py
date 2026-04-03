@@ -3,6 +3,7 @@ import sys
 import traceback
 import time
 from datetime import datetime
+from gui.func.left.file_encryption.encryption_data import  FolderDecryptor
 
 # 辅助函数：获取资源文件路径（兼容开发环境和 Nuitka 打包环境）
 def get_resource_path(relative_path):
@@ -779,12 +780,16 @@ class MainWindow(QMainWindow):
         # 先清空 verticalLayout 中的旧组件
         self.clear_layout(self.ui.verticalLayout)
         tree_widget = XPNotebookTree(file_path, rich_text_edit=self.rich_text_editor)
+        # 保存左侧树控件引用
+        self.left_tree_widget = tree_widget
         # 连接 Markdown 编辑器信号
         tree_widget.open_markdown_editor.connect(self.open_markdown_editor)
         # 更新markdown的修改地址
         tree_widget.update_markdown_obj.connect(self.update_markdown_file_path)
         # 连接思维导图编辑器信号
         tree_widget.open_mindmap_editor.connect(self.open_mindmap_editor)
+        # 解密文件夹
+        tree_widget.unlock_dir_with_password.connect(self.unlock_dir_passwd)
         # 连接文件重命名信号
         tree_widget.file_renamed.connect(self.on_file_renamed)
 
@@ -1005,6 +1010,30 @@ class MainWindow(QMainWindow):
                     self.status.showMessage("自动保存失败", 2000)
 
     @Slot(str)
+    def unlock_dir_passwd(self, file_path):
+        FolderDecryptor.decrypt_in_place(file_path, '123456')
+        # 修改文件属性
+        editor = JsonEditor()
+        # 读取detail_info的信息
+        detail_info = editor.read_node_infos(file_path)
+        content_type = detail_info['node']['detail_info']['content_type']
+        temp_type = content_type.replace("lock","")
+        detail_info['node']['detail_info']['content_type'] = temp_type
+        editor.writeByData(os.path.join(file_path, ".metadata.json"), detail_info)
+
+        # 3. 清理逻辑
+        full_item_path = os.path.join(file_path, "encrypted_data.7z")
+        if os.path.exists(full_item_path):
+            os.remove(full_item_path)
+
+        # 刷新树结构
+        if hasattr(self, 'left_tree_widget') and self.left_tree_widget:
+            self.left_tree_widget.refresh_tree_by_path(file_path)
+
+
+
+
+    @Slot(str)
     def open_mindmap_editor(self, file_path):
         """打开思维导图编辑器"""
         print(f"[MainWindow] open_mindmap_editor called with: {file_path}")
@@ -1110,6 +1139,7 @@ class MainWindow(QMainWindow):
         #     self.auto_save_note()
         
         event.accept()
+
 
     def open_settings(self):
         """打开设置对话框"""

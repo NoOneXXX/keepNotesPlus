@@ -1,7 +1,9 @@
 
 import json
+import shutil
 from pathlib import Path
 from gui.func.left.dropItemEvent import CustomTreeWidget
+from gui.func.left.file_encryption.encryption_data import FolderEncryptor
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
@@ -30,6 +32,7 @@ class XPNotebookTree(QWidget):
     update_markdown_obj = Signal(str)  # 更新 Markdown 编辑器对象
     open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
     file_renamed = Signal(str, str)     # 文件重命名信号，参数为(旧路径, 新路径)
+    unlock_dir_with_password = Signal(str)  # 通过密码来解压出来这个文件内容
     
     def __init__(self, path, rich_text_edit=None, parent=None):
         super().__init__(parent)
@@ -219,6 +222,19 @@ class XPNotebookTree(QWidget):
                     items.append((folder_item, order_dir))
                     if detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
+                elif "lock" in content_type:
+                    # 加密的文件
+                    folder_item = QTreeWidgetItem()
+                    folder_item.setData(0, Qt.UserRole, full_path)
+                    folder_item.setData(0, Qt.UserRole + 2, order_dir)
+                    folder_item.setText(0, f"{name}  🔐")
+                    # 使用思维导图图标
+                    mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
+                    folder_item.setIcon(0, mindmap_icon)
+                    # 加入到集合
+                    items.append((folder_item, order_dir))
+                    if detail_info.get('has_children', False):
+                        folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
                 elif content_type and content_type.find('attachfile') != -1:
                     # 处理 epub 文件类型
                     # 封装这个树
@@ -300,6 +316,11 @@ class XPNotebookTree(QWidget):
         if content_type == "mindmap":
             self.open_mindmap_editor.emit(file_path)
             return
+
+        # 如果是加密的就直接的弹框让输入密码
+        if "lock" in content_type:
+            self.unlock_dir_with_password.emit(file_path)
+            return
         
         # 触发这个更新富文本框的信号（Markdown 和思维导图类型不触发）
         sm.change_web_engine_2_richtext_signal.emit()
@@ -364,6 +385,7 @@ class XPNotebookTree(QWidget):
             menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
             menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
             menu.add_separator()
+            menu.add_action("🔐", "加密", lambda: self.encrypt_item(item), "#06B6D4")
             menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
 
         # ====================== 根据类型显示菜单 ======================
@@ -1803,15 +1825,79 @@ class XPNotebookTree(QWidget):
         # except Exception as e:
         #     QMessageBox.critical(self, "拖拽失败", f"无法完成拖拽操作:\n{e}")
 
+    # 对当前文件夹进行加密
+    def encrypt_item(self, item):
+        # 获取路径
+        base_dir_path = item.data(0, Qt.UserRole)
+        # 加密
+        FolderEncryptor.encrypt_folder_content(base_dir_path, "123456")
+
+        EXCLUDES = [".metadata.json", "encrypted_data.7z"]
 
 
+        # 刷新当前文件夹的树状结构
+        parent_item = item.parent()
+        if parent_item:
+            parent_path = parent_item.data(0, Qt.UserRole)
+            # 强制刷新树控件
+            self.tree.viewport().update()
+            # 重新加载子节点
+            parent_item.takeChildren()
+            self.populate_tree(parent_item, parent_path)
+            # 高亮当前节点
+            self.tree.setCurrentItem(item)
+            self.tree.scrollToItem(item)
 
+        # 3. 清理逻辑
+        if base_dir_path:
+            for item in os.listdir(base_dir_path):
+                if item in EXCLUDES:
+                    continue
 
+                full_item_path = os.path.join(base_dir_path, item)
+                if os.path.isdir(full_item_path):
+                    shutil.rmtree(full_item_path)
+                else:
+                    os.remove(full_item_path)
 
+    def refresh_tree_by_path(self, file_path):
+        """根据文件路径刷新对应的树节点"""
+        # 查找对应路径的树节点
+        item = self.find_item_by_path(file_path)
+        if item:
+            parent_item = item.parent()
+            if parent_item:
+                parent_path = parent_item.data(0, Qt.UserRole)
+                # 强制刷新树控件
+                self.tree.viewport().update()
+                # 重新加载子节点
+                parent_item.takeChildren()
+                self.populate_tree(parent_item, parent_path)
+                # 高亮当前节点
+                self.tree.setCurrentItem(item)
+                self.tree.scrollToItem(item)
 
+    def find_item_by_path(self, file_path):
+        """根据文件路径查找树节点"""
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item = root.child(i)
+            result = self._find_item_recursive(item, file_path)
+            if result:
+                return result
+        return None
 
-
-
+    def _find_item_recursive(self, item, file_path):
+        """递归查找树节点"""
+        item_path = item.data(0, Qt.UserRole)
+        if item_path == file_path:
+            return item
+        for i in range(item.childCount()):
+            child = item.child(i)
+            result = self._find_item_recursive(child, file_path)
+            if result:
+                return result
+        return None
 
 
 # ========================

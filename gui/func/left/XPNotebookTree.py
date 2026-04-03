@@ -4,11 +4,12 @@ import shutil
 from pathlib import Path
 from gui.func.left.dropItemEvent import CustomTreeWidget
 from gui.func.left.file_encryption.encryption_data import FolderEncryptor
+from gui.func.left.file_encryption.EncryptPasswordDialog import EncryptPasswordDialog, EncryptSuccessDialog
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
     QTreeWidgetItem, QStyleFactory, QMessageBox, QHeaderView, QInputDialog, QFileDialog,
-    QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QDialog, QPushButton
+    QGraphicsOpacityEffect, QGraphicsDropShadowEffect, QDialog, QPushButton, QLineEdit
 )
 from PySide6.QtGui import QIcon, QPixmap, QFont, QPalette, QColor, QCursor
 from PySide6.QtCore import Qt, Slot, QUrl, QMimeData, QTimer, QPropertyAnimation, QEasingCurve, Signal
@@ -182,7 +183,7 @@ class XPNotebookTree(QWidget):
                     # 加入到集合
                     items.append((folder_item, order_dir))
                     # 懒加载标记项
-                    if detail_info.get('has_children', False):
+                    if detail_info and detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())
                 elif content_type == "file":
                     # 封装这个树
@@ -194,7 +195,7 @@ class XPNotebookTree(QWidget):
                     # 加入到集合
                     items.append((folder_item, order_dir))
                     #  也允许子文件结构（懒加载子节点）
-                    if detail_info.get('has_children', False):
+                    if detail_info and detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
                 elif content_type == "markdown":
                     # 处理 Markdown 文件类型
@@ -207,7 +208,7 @@ class XPNotebookTree(QWidget):
                     folder_item.setIcon(0, markdown_icon)
                     # 加入到集合
                     items.append((folder_item, order_dir))
-                    if detail_info.get('has_children', False):
+                    if detail_info and detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
                 elif content_type == "mindmap":
                     # 处理思维导图文件类型
@@ -220,20 +221,25 @@ class XPNotebookTree(QWidget):
                     folder_item.setIcon(0, mindmap_icon)
                     # 加入到集合
                     items.append((folder_item, order_dir))
-                    if detail_info.get('has_children', False):
+                    if detail_info and detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
                 elif "lock" in content_type:
                     # 加密的文件
                     folder_item = QTreeWidgetItem()
                     folder_item.setData(0, Qt.UserRole, full_path)
                     folder_item.setData(0, Qt.UserRole + 2, order_dir)
-                    folder_item.setText(0, f"{name}  🔐")
-                    # 使用思维导图图标
-                    mindmap_icon = QIcon(QPixmap(":images/markdown.png"))
-                    folder_item.setIcon(0, mindmap_icon)
+                    # 移除名称中已存在的🔐，避免重复添加
+                    display_name = name.replace("🔐", "").strip()
+                    folder_item.setText(0, f"{display_name}  🔐")
+                    # 使用文件夹图标（加密文件夹仍然显示文件夹样式）
+                    if detail_info:
+                        close_icon = detail_info.get('close_dir_icon', ':images/folder-orange.png')
+                        folder_item.setIcon(0, QIcon(QPixmap(close_icon)))
+                    else:
+                        folder_item.setIcon(0, self.folder_closed_icon)
                     # 加入到集合
                     items.append((folder_item, order_dir))
-                    if detail_info.get('has_children', False):
+                    if detail_info and detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
                 elif content_type and content_type.find('attachfile') != -1:
                     # 处理 epub 文件类型
@@ -245,7 +251,7 @@ class XPNotebookTree(QWidget):
                     folder_item.setIcon(0, self.attach_file)  # 用你自己的 epub 图标路径
                     # 加入到集合
                     items.append((folder_item, order_dir))
-                    if detail_info.get('has_children', False):
+                    if detail_info and detail_info.get('has_children', False):
                         folder_item.addChild(QTreeWidgetItem())  # 懒加载标记
 
             # 按 order 排序
@@ -265,16 +271,32 @@ class XPNotebookTree(QWidget):
             return
 
         new_name = item.text(0).strip()
-        if not new_name or new_name == os.path.basename(old_path):
+        # 移除🔐，确保实际文件夹名称不包含emoji
+        actual_name = new_name.replace("🔐", "").strip()
+        
+        if not actual_name or actual_name == os.path.basename(old_path):
+            # 恢复显示名称
+            editor = JsonEditor()
+            content_type = editor.read_notebook_if_dir(old_path)
+            if content_type and "lock" in content_type:
+                item.setText(0, f"{os.path.basename(old_path)}  🔐")
+            else:
+                item.setText(0, os.path.basename(old_path))
             return
 
         parent_item = item.parent()
         parent_path = self.custom_path if parent_item is None else parent_item.data(0, Qt.UserRole)
-        new_path = os.path.join(parent_path, new_name)
+        new_path = os.path.join(parent_path, actual_name)
 
         if os.path.exists(new_path):
             QMessageBox.warning(self, "重命名失败", "已存在同名文件/文件夹")
-            item.setText(0, os.path.basename(old_path))
+            # 恢复显示名称
+            editor = JsonEditor()
+            content_type = editor.read_notebook_if_dir(old_path)
+            if content_type and "lock" in content_type:
+                item.setText(0, f"{os.path.basename(old_path)}  🔐")
+            else:
+                item.setText(0, os.path.basename(old_path))
             return
 
         try:
@@ -282,12 +304,24 @@ class XPNotebookTree(QWidget):
             item.setData(0, Qt.UserRole, new_path)
             item.setData(0, Qt.UserRole + 1, None)  #移除"刚创建"标记
             self._update_child_user_roles(item, old_path, new_path)
+            
+            # 如果是加密文件夹，保持显示名称带🔐
+            editor = JsonEditor()
+            content_type = editor.read_notebook_if_dir(new_path)
+            if content_type and "lock" in content_type:
+                item.setText(0, f"{actual_name}  🔐")
                     
             # 发射文件重命名信号，通知主窗口更新编辑器路径
             self.file_renamed.emit(old_path, new_path)
         except Exception as e:
             QMessageBox.critical(self, "重命名失败", str(e))
-            item.setText(0, os.path.basename(old_path))
+            # 恢复显示名称
+            editor = JsonEditor()
+            content_type = editor.read_notebook_if_dir(old_path)
+            if content_type and "lock" in content_type:
+                item.setText(0, f"{os.path.basename(old_path)}  🔐")
+            else:
+                item.setText(0, os.path.basename(old_path))
 
     '''
     左键点击的方法实现
@@ -370,45 +404,46 @@ class XPNotebookTree(QWidget):
         is_trash_folder = detail_info and detail_info.get('title') == 'trash'
         is_in_trash = self._is_item_in_trash(item)
 
-        # 初始化自定义菜单
-        menu = ModernContextMenu(self)
+        if "lock" not in content_type:
+            # 初始化自定义菜单
+            menu = ModernContextMenu(self)
 
-        # ====================== 公共方法：添加通用菜单 ======================
-        def add_common_actions():
-            """添加所有节点通用的右键菜单（打开、重命名、删除等）"""
-            menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
-            menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
-            menu.add_separator()
-            menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
-            menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
-            menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
-            menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
-            menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
-            menu.add_separator()
-            menu.add_action("🔐", "加密", lambda: self.encrypt_item(item), "#06B6D4")
-            menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
+            # ====================== 公共方法：添加通用菜单 ======================
+            def add_common_actions():
+                """添加所有节点通用的右键菜单（打开、重命名、删除等）"""
+                menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
+                menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
+                menu.add_separator()
+                menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
+                menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
+                menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
+                menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
+                menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
+                menu.add_separator()
+                menu.add_action("🔐", "加密", lambda: self.encrypt_item(item), "#06B6D4")
+                menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
 
-        # ====================== 根据类型显示菜单 ======================
-        if is_trash_folder:
-            # 回收站根目录：仅清空
-            menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
+            # ====================== 根据类型显示菜单 ======================
+            if is_trash_folder:
+                # 回收站根目录：仅清空
+                menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
 
-        elif is_in_trash:
-            # 回收站内部：永久删除 + 恢复
-            menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
-            menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
+            elif is_in_trash:
+                # 回收站内部：永久删除 + 恢复
+                menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
+                menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
 
-        elif is_attachment:
-            # 附件：额外加“复制附件”，其他通用
-            menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
-            add_common_actions()
+            elif is_attachment:
+                # 附件：额外加“复制附件”，其他通用
+                menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
+                add_common_actions()
 
-        else:
-            # 普通文件/文件夹：全量通用菜单
-            add_common_actions()
+            else:
+                # 普通文件/文件夹：全量通用菜单
+                add_common_actions()
 
-        # 显示
-        menu.show_menu(self.tree.viewport().mapToGlobal(point))
+            # 显示
+            menu.show_menu(self.tree.viewport().mapToGlobal(point))
 
     '''
     创建彩色图标
@@ -537,20 +572,35 @@ class XPNotebookTree(QWidget):
     def rename_item(self, item):
         old_path = item.data(0, Qt.UserRole)
         old_name = os.path.basename(old_path)
-        new_name, ok = QInputDialog.getText(self, "重命名", "输入新名称：", text=os.path.splitext(old_name)[0])
-        if not ok or not new_name :
+        
+        # 检查是否为加密文件夹
+        editor = JsonEditor()
+        content_type = editor.read_notebook_if_dir(old_path)
+        is_locked = content_type and "lock" in content_type
+        
+        # 显示名称（不带🔐）
+        display_name = old_name.replace("🔐", "").strip()
+        new_name, ok = QInputDialog.getText(self, "重命名", "输入新名称：", text=display_name)
+        if not ok or not new_name:
             return
-        if new_name == old_name:
-            QMessageBox.information(self,"文件名已经存在","请更换别的名字，文件名已经存在")
+        # 移除用户输入中可能包含的🔐
+        actual_name = new_name.replace("🔐", "").strip()
+        if actual_name == old_name:
+            QMessageBox.information(self, "文件名已经存在", "请更换别的名字，文件名已经存在")
+            return
         ext = os.path.splitext(old_path)[1]  # 获取旧后缀
-        new_path = os.path.join(os.path.dirname(old_path), new_name + ext)
+        new_path = os.path.join(os.path.dirname(old_path), actual_name + ext)
         try:
             os.rename(old_path, new_path)
         except Exception as e:
             QMessageBox.critical(self, "重命名失败", f"无法重命名")
             return
 
-        item.setText(0, os.path.splitext(new_name)[0])
+        # 如果是加密文件夹，显示名称带🔐
+        if is_locked:
+            item.setText(0, f"{actual_name}  🔐")
+        else:
+            item.setText(0, actual_name)
         item.setData(0, Qt.UserRole, new_path)
         # 更新markdown对象 防止更换名字后重新创建多个文件
         self.update_markdown_obj.emit(new_path)
@@ -1643,20 +1693,24 @@ class XPNotebookTree(QWidget):
             item.setIcon(0, mindmap_icon)
             return
         
+        # 默认文件夹图标
+        default_folder_icon = ":images/folder-orange.png"
+        
         # 关闭
         if 'collapsed' == exps:
-            if content_type == "dir" or content_type == "file":
-                colla_icon = detail_infos['close_dir_icon']
-                item.setIcon(0,  QIcon(QPixmap(colla_icon)))
+            if content_type == "dir" or content_type == "file" or "lock" in content_type:
+                # 安全获取图标，使用 get 方法提供默认值
+                colla_icon = detail_infos.get('close_dir_icon', default_folder_icon) if detail_infos else default_folder_icon
+                item.setIcon(0, QIcon(QPixmap(colla_icon)))
             else:
-                colla_icon = detail_infos['adds_on_icon']
+                colla_icon = detail_infos.get('adds_on_icon', default_folder_icon) if detail_infos else default_folder_icon
                 item.setIcon(0, QIcon(QPixmap(colla_icon)))
         else:
-            if content_type == "dir" or content_type == "file":
-                colla_icon = detail_infos['open_dir_icon']
-                item.setIcon(0,  QIcon(QPixmap(colla_icon)))
+            if content_type == "dir" or content_type == "file" or "lock" in content_type:
+                colla_icon = detail_infos.get('open_dir_icon', default_folder_icon) if detail_infos else default_folder_icon
+                item.setIcon(0, QIcon(QPixmap(colla_icon)))
             else:
-                colla_icon = detail_infos['adds_on_icon']
+                colla_icon = detail_infos.get('adds_on_icon', default_folder_icon) if detail_infos else default_folder_icon
                 item.setIcon(0, QIcon(QPixmap(colla_icon)))
 
 
@@ -1829,8 +1883,26 @@ class XPNotebookTree(QWidget):
     def encrypt_item(self, item):
         # 获取路径
         base_dir_path = item.data(0, Qt.UserRole)
+        
+        # 显示密码输入弹框
+        password, tip = self._show_encrypt_password_dialog()
+        if password is None:
+            return  # 用户取消
+        
         # 加密
-        FolderEncryptor.encrypt_folder_content(base_dir_path, "123456")
+        success, message = FolderEncryptor.encrypt_folder_content(base_dir_path, password)
+        
+        if not success:
+            QMessageBox.critical(self, "加密失败", message)
+            return
+        
+        
+        # 保存密码提示到 .metadata.json
+        if tip:
+            editor = JsonEditor()
+            detail_info = editor.read_node_infos(base_dir_path)
+            detail_info['node']['detail_info']['tip'] = tip
+            editor.writeByData(os.path.join(base_dir_path, ".metadata.json"), detail_info)
 
         EXCLUDES = [".metadata.json", "encrypted_data.7z"]
 
@@ -1859,6 +1931,20 @@ class XPNotebookTree(QWidget):
                     shutil.rmtree(full_item_path)
                 else:
                     os.remove(full_item_path)
+        
+        # 显示加密成功弹框
+        EncryptSuccessDialog(self).exec()
+
+    def _show_encrypt_password_dialog(self):
+        """显示加密密码输入弹框"""
+        dialog = EncryptPasswordDialog(self)
+        if dialog.exec():
+            return dialog.get_password_data()
+        return None, None
+
+    def _show_encrypt_success_dialog(self):
+        """显示加密成功弹框"""
+        EncryptSuccessDialog(self).exec()
 
     def refresh_tree_by_path(self, file_path):
         """根据文件路径刷新对应的树节点"""
@@ -1868,14 +1954,32 @@ class XPNotebookTree(QWidget):
             parent_item = item.parent()
             if parent_item:
                 parent_path = parent_item.data(0, Qt.UserRole)
+                # 记住当前节点名称，用于刷新后重新选中
+                item_name = os.path.basename(file_path)
                 # 强制刷新树控件
                 self.tree.viewport().update()
                 # 重新加载子节点
                 parent_item.takeChildren()
                 self.populate_tree(parent_item, parent_path)
-                # 高亮当前节点
-                self.tree.setCurrentItem(item)
-                self.tree.scrollToItem(item)
+                # 重新查找并高亮当前节点
+                new_item = self._find_item_by_name(parent_item, item_name)
+                if new_item:
+                    self.tree.setCurrentItem(new_item)
+                    self.tree.scrollToItem(new_item)
+
+    def _find_item_by_name(self, parent_item, name):
+        """根据名称在父节点下查找子节点"""
+        for i in range(parent_item.childCount()):
+            child = parent_item.child(i)
+            child_path = child.data(0, Qt.UserRole)
+            if child_path:
+                child_name = os.path.basename(child_path)
+                # 移除🔐后比较名称
+                child_name = child_name.replace("🔐", "").strip()
+                name = name.replace("🔐", "").strip()
+                if child_name == name:
+                    return child
+        return None
 
     def find_item_by_path(self, file_path):
         """根据文件路径查找树节点"""

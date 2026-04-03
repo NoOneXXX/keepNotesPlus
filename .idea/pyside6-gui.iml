@@ -14,7 +14,7 @@
   <component name="TemplatesService">
     <option name="TEMPLATE_FOLDERS">
       <list>
-        <option value="$MODULE_DIR$/out/main.dist/docx/templates" />
+        <option value="$MODULE_DIR$/out/keepNotesPlus.dist/docx/templates" />
       </list>
     </option>
   </component>

@@ -4,6 +4,7 @@ import traceback
 import time
 from datetime import datetime
 from gui.func.left.file_encryption.encryption_data import  FolderDecryptor
+from gui.func.left.file_encryption.DecryptPasswordDialog import DecryptPasswordDialog, DecryptSuccessDialog
 
 # 辅助函数：获取资源文件路径（兼容开发环境和 Nuitka 打包环境）
 def get_resource_path(relative_path):
@@ -1011,24 +1012,42 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def unlock_dir_passwd(self, file_path):
-        FolderDecryptor.decrypt_in_place(file_path, '123456')
-        # 修改文件属性
-        editor = JsonEditor()
-        # 读取detail_info的信息
-        detail_info = editor.read_node_infos(file_path)
-        content_type = detail_info['node']['detail_info']['content_type']
-        temp_type = content_type.replace("lock","")
-        detail_info['node']['detail_info']['content_type'] = temp_type
-        editor.writeByData(os.path.join(file_path, ".metadata.json"), detail_info)
+        """解密文件夹"""
+        # 显示密码输入弹框
+        dialog = DecryptPasswordDialog(file_path, self)
+        if dialog.exec():
+            password = dialog.get_password()
+            if not password:
+                return
+            
+            # 尝试解密
+            success, message = FolderDecryptor.decrypt_in_place(file_path, password)
+            
+            if not success:
+                QMessageBox.critical(self, "解密失败", message)
+                return
+            
+            # 修改文件属性
+            editor = JsonEditor()
+            detail_info = editor.read_node_infos(file_path)
+            content_type = detail_info['node']['detail_info']['content_type']
+            temp_type = content_type.replace("lock", "")
+            detail_info['node']['detail_info']['content_type'] = temp_type
+            # 清除密码提示
+            detail_info['node']['detail_info']['tip'] = ""
+            editor.writeByData(os.path.join(file_path, ".metadata.json"), detail_info)
 
-        # 3. 清理逻辑
-        full_item_path = os.path.join(file_path, "encrypted_data.7z")
-        if os.path.exists(full_item_path):
-            os.remove(full_item_path)
+            # 清理加密文件
+            full_item_path = os.path.join(file_path, "encrypted_data.7z")
+            if os.path.exists(full_item_path):
+                os.remove(full_item_path)
 
-        # 刷新树结构
-        if hasattr(self, 'left_tree_widget') and self.left_tree_widget:
-            self.left_tree_widget.refresh_tree_by_path(file_path)
+            # 刷新树结构
+            if hasattr(self, 'left_tree_widget') and self.left_tree_widget:
+                self.left_tree_widget.refresh_tree_by_path(file_path)
+            
+            # 显示解密成功弹框
+            DecryptSuccessDialog(self).exec()
 
 
 

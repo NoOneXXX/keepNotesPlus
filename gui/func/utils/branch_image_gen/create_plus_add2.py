@@ -37,9 +37,9 @@ def generate_final_fine_tuned_icons():
     # ============================================================
 
     # 颜色定义 (保持不变)
-    MAGENTA = QColor("#FF00FF")
-    WHITE = QColor("#FFFFFF")
-    CYAN = QColor("#000000")
+    MAGENTA = QColor("#8B0000")
+    WHITE = QColor("#FFFFFF") # 这个是背景色不要动
+    CYAN = QColor("#008B8B")
 
     def draw_icon(mode="plus"):
         pix = QPixmap(W, H)

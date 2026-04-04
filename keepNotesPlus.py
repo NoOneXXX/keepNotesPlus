@@ -940,10 +940,16 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def open_markdown_editor(self, file_path):
+        if file_path == '':
+            # 清空编辑器，避免触发自动保存
+            self.markdown_editor.load_file("")
+            # 更新窗口标题
+            self.path = None
+            self.update_title()
+            return
         """打开 Markdown 编辑器"""
         # 获取 Markdown 文件路径
         md_path = os.path.join(file_path, "document.md")
-        
         # 如果已经在 Markdown 编辑器，先保存当前文件再加载新文件
         if self.current_editor_type == "markdown":
             # 强制保存当前编辑的内容，不检查 is_modified

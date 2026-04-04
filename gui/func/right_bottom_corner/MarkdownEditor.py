@@ -736,6 +736,19 @@ class MarkdownEditor(QWidget):
             
     def load_file(self, file_path):
         """加载 Markdown 文件"""
+        # 处理空路径：清空编辑器并重置状态
+        if not file_path:
+            self.editor.blockSignals(True)
+            self.split_editor.blockSignals(True)
+            self.editor.clear()
+            self.split_editor.clear()
+            self.set_file_path(None)  # 清空文件路径
+            self.editor.document().setModified(False)
+            self.split_editor.document().setModified(False)
+            self.editor.blockSignals(False)
+            self.split_editor.blockSignals(False)
+            return True
+        
         try:
             # 临时阻塞信号，避免加载过程中触发不必要的更新
             self.editor.blockSignals(True)

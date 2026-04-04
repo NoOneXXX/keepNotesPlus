@@ -1934,10 +1934,8 @@ class XPNotebookTree(QWidget):
                 else:
                     os.remove(full_item_path)
         # 发送信号通知主窗口打开 Markdown 编辑器 跟新为空将文件隐藏
-        if 'markdown' in content_type:
-            self.open_markdown_editor.emit("")
-        elif 'file' in content_type:
-            self.clear_richtext_editor.emit()
+        self.open_markdown_editor.emit("")
+        self.clear_richtext_editor.emit()
 
         # 显示加密成功弹框
         EncryptSuccessDialog(self).exec()

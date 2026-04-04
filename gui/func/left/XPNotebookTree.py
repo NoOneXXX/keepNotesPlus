@@ -34,6 +34,7 @@ class XPNotebookTree(QWidget):
     open_mindmap_editor = Signal(str)   # 打开思维导图编辑器，参数为文件路径
     file_renamed = Signal(str, str)     # 文件重命名信号，参数为(旧路径, 新路径)
     unlock_dir_with_password = Signal(str)  # 通过密码来解压出来这个文件内容
+    clear_richtext_editor = Signal()  # 清空富文本编辑器
     
     def __init__(self, path, rich_text_edit=None, parent=None):
         super().__init__(parent)
@@ -1881,6 +1882,7 @@ class XPNotebookTree(QWidget):
 
     # 对当前文件夹进行加密
     def encrypt_item(self, item):
+        content_type = ''
         # 获取路径
         base_dir_path = item.data(0, Qt.UserRole)
         
@@ -1898,11 +1900,11 @@ class XPNotebookTree(QWidget):
         
         
         # 保存密码提示到 .metadata.json
-        if tip:
-            editor = JsonEditor()
-            detail_info = editor.read_node_infos(base_dir_path)
-            detail_info['node']['detail_info']['tip'] = tip
-            editor.writeByData(os.path.join(base_dir_path, ".metadata.json"), detail_info)
+        editor = JsonEditor()
+        detail_info = editor.read_node_infos(base_dir_path)
+        content_type = detail_info['node']['detail_info'].get('content_type', '')
+        detail_info['node']['detail_info']['tip'] = tip
+        editor.writeByData(os.path.join(base_dir_path, ".metadata.json"), detail_info)
 
         EXCLUDES = [".metadata.json", "encrypted_data.7z"]
 
@@ -1932,7 +1934,11 @@ class XPNotebookTree(QWidget):
                 else:
                     os.remove(full_item_path)
         # 发送信号通知主窗口打开 Markdown 编辑器 跟新为空将文件隐藏
-        self.open_markdown_editor.emit("")
+        if 'markdown' in content_type:
+            self.open_markdown_editor.emit("")
+        elif 'file' in content_type:
+            self.clear_richtext_editor.emit()
+
         # 显示加密成功弹框
         EncryptSuccessDialog(self).exec()
 

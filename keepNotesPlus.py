@@ -793,6 +793,8 @@ class MainWindow(QMainWindow):
         tree_widget.unlock_dir_with_password.connect(self.unlock_dir_passwd)
         # 连接文件重命名信号
         tree_widget.file_renamed.connect(self.on_file_renamed)
+        # 连接清空富文本编辑器信号
+        tree_widget.clear_richtext_editor.connect(self.clear_richtext_editor)
 
         self.ui.verticalLayout.addWidget(tree_widget)
 
@@ -888,6 +890,21 @@ class MainWindow(QMainWindow):
 
         # 回传这个参数给left 左侧的树点击事件
         sm.received_rich_text_2_left_click_signal.emit(self.rich_text_editor)
+    
+    @Slot()
+    def clear_richtext_editor(self):
+        """清空富文本编辑器，避免触发自动保存"""
+        # 清空富文本编辑器内容
+        self.rich_text_editor.clear()
+        # 清空保存路径
+        self.richtext_saved_path = None
+        # 更新窗口标题
+        self.path = None
+        self.update_title()
+        # 切换到富文本编辑器
+        self.editor_stack.setCurrentIndex(0)
+        self.current_editor = self.rich_text_editor
+        self.current_editor_type = "richtext"
 
     @Slot(str, str)
     def on_file_renamed(self, old_path, new_path):

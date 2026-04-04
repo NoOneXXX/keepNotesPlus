@@ -1013,40 +1013,31 @@ class MainWindow(QMainWindow):
     @Slot(str)
     def unlock_dir_passwd(self, file_path):
         """解密文件夹"""
-        # 显示密码输入弹框
+        # 1. 弹出对话框 (逻辑已封装在 dialog.accept 中)
         dialog = DecryptPasswordDialog(file_path, self)
-        if dialog.exec():
-            password = dialog.get_password()
-            if not password:
-                return
-            
-            # 尝试解密
-            success, message = FolderDecryptor.decrypt_in_place(file_path, password)
-            
-            if not success:
-                QMessageBox.critical(self, "解密失败", message)
-                return
-            
-            # 修改文件属性
-            editor = JsonEditor()
-            detail_info = editor.read_node_infos(file_path)
-            content_type = detail_info['node']['detail_info']['content_type']
-            temp_type = content_type.replace("lock", "")
-            detail_info['node']['detail_info']['content_type'] = temp_type
-            # 清除密码提示
-            detail_info['node']['detail_info']['tip'] = ""
-            editor.writeByData(os.path.join(file_path, ".metadata.json"), detail_info)
 
-            # 清理加密文件
+        # 只有当解密成功并调用了 super().accept()，这里才会返回 True
+        if dialog.exec():
+            # 2. 修改文件属性（解密后的后续操作）
+            editor = JsonEditor()
+            metadata_path = os.path.join(file_path, ".metadata.json")
+            detail_info = editor.read_node_infos(file_path)
+
+            content_type = detail_info['node']['detail_info']['content_type']
+            detail_info['node']['detail_info']['content_type'] = content_type.replace("lock", "")
+            detail_info['node']['detail_info']['tip'] = ""
+            editor.writeByData(metadata_path, detail_info)
+
+            # 3. 清理加密文件
             full_item_path = os.path.join(file_path, "encrypted_data.7z")
             if os.path.exists(full_item_path):
                 os.remove(full_item_path)
 
-            # 刷新树结构
+            # 4. 刷新树结构
             if hasattr(self, 'left_tree_widget') and self.left_tree_widget:
                 self.left_tree_widget.refresh_tree_by_path(file_path)
-            
-            # 显示解密成功弹框
+
+            # 5. 显示成功提示
             DecryptSuccessDialog(self).exec()
 
 

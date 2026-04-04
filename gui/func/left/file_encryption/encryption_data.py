@@ -92,7 +92,5 @@ class FolderDecryptor:
             # os.remove(target_7z)
 
             return True, "解密提取完成"
-        except (py7zr.exceptions.Bad7zFileError, py7zr.exceptions.CrcError):
+        except Exception as e2:
             return False, "密码错误"
-        except Exception as e:
-            return False, str(e)

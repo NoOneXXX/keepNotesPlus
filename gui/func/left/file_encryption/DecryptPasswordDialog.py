@@ -11,9 +11,9 @@ from PySide6.QtWidgets import (
     QApplication, QDialog, QLabel, QVBoxLayout, QLineEdit,
     QPushButton, QHBoxLayout, QWidget, QGraphicsDropShadowEffect, QMessageBox
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QCursor
-
+from gui.func.left.file_encryption.encryption_data import  FolderDecryptor
 
 class DecryptPasswordDialog(QDialog):
     """解密密码输入弹窗"""
@@ -23,6 +23,7 @@ class DecryptPasswordDialog(QDialog):
         self._folder_path = folder_path
         self._password = None
         self._tip = self._read_tip_from_metadata()
+        self.num = 0
 
         self._setup_ui()
         self._center_dialog()
@@ -273,6 +274,26 @@ class DecryptPasswordDialog(QDialog):
         return self._password
 
 
+    # 在 DecryptPasswordDialog 类内部
+    def accept(self):
+        password = self.get_password()
+        if not password:
+            return
+
+        # 直接在 Dialog 内部调用解密工具
+        success, message = FolderDecryptor.decrypt_in_place(self._folder_path, password)
+        if success:
+            super().accept()  # 解密成功，正常关闭对话框
+        else:
+            self.num += 1  # 增加错误计数
+            if self.num == 10:
+                self._show_error("别玩了【行不】，你已经输错了10次了！！！")
+            elif self.num > 10:
+                self._show_error("错误次数过多,5秒后窗口会关闭，请稍后再试")
+                QTimer.singleShot(1000 * 5, self.reject)  # 5秒后自动关闭对话框
+            else:
+                self._show_error(message + f" (错误次数: {self.num} 次)")
+              # 解密失败，保持对话框，显示错误
 class DecryptSuccessDialog(QDialog):
     """解密成功弹窗 - 视觉同步"""
 

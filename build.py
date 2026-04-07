@@ -43,6 +43,14 @@ if os.path.exists(qss_dir):
             source_path = os.path.join(qss_dir, filename).replace('\\', '/')
             cmd_args.append(f"--include-data-files={source_path}=gui/ui/qss/{filename}")
 
+# 包含 MarkdownRenderer CSS 样式文件（callout 样式）
+markdown_css_dir = os.path.join(base_dir, "gui", "func", "right_bottom_corner", "css")
+if os.path.exists(markdown_css_dir):
+    for filename in os.listdir(markdown_css_dir):
+        if filename.endswith('.css'):
+            source_path = os.path.join(markdown_css_dir, filename).replace('\\', '/')
+            cmd_args.append(f"--include-data-files={source_path}=gui/func/right_bottom_corner/css/{filename}")
+
 # 包含 JS 资源文件（KaTeX 和 Mermaid）
 js_dir = os.path.join(base_dir, "gui", "ui", "js")
 if os.path.exists(js_dir):

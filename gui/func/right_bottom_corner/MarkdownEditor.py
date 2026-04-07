@@ -809,6 +809,7 @@ class MarkdownEditor(QWidget):
             # 即使用户切换到了其他模式，只要分屏编辑器有修改，就应该保存它
             if self.split_editor.document().isModified():
                 content = self.split_editor.toPlainText()
+                content = self.change_time_tag_persistence(content)
                 logger.debug(f"保存分屏编辑器内容到: {target_path}")
                 # 同步到主编辑器（阻塞信号避免触发自动保存循环）
                 self.editor.blockSignals(True)
@@ -816,6 +817,7 @@ class MarkdownEditor(QWidget):
                 self.editor.blockSignals(False)
             elif current_mode == 2:  # 分屏模式（但上面的条件未触发，可能是新建文件等情况）
                 content = self.split_editor.toPlainText()
+                content = self.change_time_tag_persistence(content)
                 logger.debug(f"分屏模式下保存内容到: {target_path}")
                 # 同步到主编辑器
                 self.editor.blockSignals(True)
@@ -824,21 +826,13 @@ class MarkdownEditor(QWidget):
             else:
                 # 使用主编辑器的内容
                 content = self.editor.toPlainText()
+                content = self.change_time_tag_persistence(content)
                 logger.debug(f"保存主编辑器内容到: {target_path}")
                 # 同步到分屏编辑器
                 self.split_editor.blockSignals(True)
                 self.split_editor.setPlainText(content)
                 self.split_editor.blockSignals(False)
 
-            # 在写入磁盘前，物理替换内存中的 [time]
-            content = self.editor.toPlainText()
-            if "[time]" in content:
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                content = content.replace("[time]", f"[time:{now_str}]")
-                # 同步回编辑器，让用户看到变化
-                self.editor.blockSignals(True)
-                self.editor.setPlainText(content)
-                self.editor.blockSignals(False)
             # 使用 target_path 而不是 self.md_file_path，确保保存到正确的路径
             with open(target_path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -856,7 +850,14 @@ class MarkdownEditor(QWidget):
         except Exception as e:
             logger.error(f"保存 Markdown 文件失败: {e}")
             return False
-            
+
+    # 进行时间持久化
+    def change_time_tag_persistence(self, content):
+        if "[time]" in content:
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            content = content.replace("[time]", f"[time:{now_str}]")
+        return content
+
     def get_content(self):
         """获取当前内容"""
         # 根据当前模式获取正确的编辑器内容

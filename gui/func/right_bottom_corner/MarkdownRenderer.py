@@ -498,7 +498,7 @@ def setup_callout_plugin(md):
             token = tokens[i]
 
             if token.type == "blockquote_open":
-                # 找到这个 blockquote 的范围和内容
+                # 找到这个 blockquote 的范围和 inline 内容
                 start_idx = i
                 inline_idx = None
                 nesting_level = 1
@@ -527,9 +527,6 @@ def setup_callout_plugin(md):
                     if match:
                         is_callout = True
                         callout_type = match.group(1).lower()
-                        # 移除 [!type] 标记
-                        new_content = re.sub(r'^\[!(.*?)\]\s*', '', content)
-                        tokens[inline_idx].content = new_content
 
                 if is_callout:
                     # 标记为 callout
@@ -538,12 +535,11 @@ def setup_callout_plugin(md):
                         token.meta = {}
                     token.meta["callout_type"] = callout_type
 
-                    # 添加当前 callout 的 open token
+                    # 添加当前 callout 的 token
                     result.append(token)
                     result.append(tokens[inline_idx])
 
-                    # 查找并处理嵌套的 callout
-                    # 从 inline 之后开始查找
+                    # 处理嵌套的 callout
                     k = inline_idx + 1
                     while k < end_idx:
                         t = tokens[k]
@@ -571,13 +567,7 @@ def setup_callout_plugin(md):
                             # 检查嵌套的是否是 callout
                             if nested_inline_idx is not None:
                                 nested_content = tokens[nested_inline_idx].content
-                                nested_match = re.match(r'^\[!(.*?)\]', nested_content)
-                                if nested_match:
-                                    # 是嵌套的 callout
-                                    # 先移除嵌套 callout 的 [!type] 标记
-                                    nested_new_content = re.sub(r'^\[!(.*?)\]\s*', '', nested_content)
-                                    tokens[nested_inline_idx].content = nested_new_content
-
+                                if re.match(r'^\[!(.*?)\]', nested_content):
                                     # 先关闭当前 callout
                                     close_token = tokens[end_idx]
                                     close_token.info = "is_callout"
@@ -588,9 +578,6 @@ def setup_callout_plugin(md):
                                     extracted = extract_callouts_from_tokens(nested_tokens)
                                     result.extend(extracted)
 
-                                    # 重新开启一个新的 callout（如果需要）
-                                    # 实际上，嵌套 callout 后面的内容应该属于新的 callout
-                                    # 这里简化处理：每个 callout 独立
                                     k = nested_end + 1
                                     continue
 

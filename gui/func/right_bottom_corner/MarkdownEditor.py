@@ -15,7 +15,7 @@ Markdown 编辑器组件
 import os
 import time
 import shutil
-
+from datetime import datetime
 from PySide6.QtWidgets import (
     QTextEdit, QMenu, QMessageBox, QFileDialog, QApplication,
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QSplitter,
@@ -33,7 +33,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 
 from gui.func.utils import logger
-from gui.func.utils.markdown_renderer import render_markdown
+from gui.func.right_bottom_corner.markdown_renderer import render_markdown
 
 
 class CopyHandler(QObject):
@@ -157,7 +157,7 @@ class MarkdownEditor(QWidget):
         self._preview_update_timer = QTimer(self)
         self._preview_update_timer.setSingleShot(True)
         self._preview_update_timer.timeout.connect(self._do_update_split_preview)
-        
+
         self._setup_ui()
         self._setup_connections()
         
@@ -306,7 +306,8 @@ class MarkdownEditor(QWidget):
         
         # 设置默认模式
         self._set_mode("edit", update_preview=False)
-        
+
+
     def _setup_web_channel(self, webview):
         """为 QWebEngineView 设置 QWebChannel，支持复制功能"""
         channel = QWebChannel(self)
@@ -829,6 +830,15 @@ class MarkdownEditor(QWidget):
                 self.split_editor.setPlainText(content)
                 self.split_editor.blockSignals(False)
 
+            # 在写入磁盘前，物理替换内存中的 [time]
+            content = self.editor.toPlainText()
+            if "[time]" in content:
+                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                content = content.replace("[time]", f"[time:{now_str}]")
+                # 同步回编辑器，让用户看到变化
+                self.editor.blockSignals(True)
+                self.editor.setPlainText(content)
+                self.editor.blockSignals(False)
             # 使用 target_path 而不是 self.md_file_path，确保保存到正确的路径
             with open(target_path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -866,7 +876,7 @@ class MarkdownEditor(QWidget):
         if current_mode == 2:  # 分屏模式
             return self.split_editor.document().isModified()
         return self.editor.document().isModified()
-        
+
     def clear(self):
         """清空内容"""
         self.editor.clear()

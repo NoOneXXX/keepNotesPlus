@@ -14,8 +14,7 @@ Markdown 渲染模块
 
 import os
 import re
-from typing import Optional
-
+from datetime import datetime
 from markdown_it import MarkdownIt
 from mdit_py_plugins.front_matter import front_matter_plugin
 from mdit_py_plugins.footnote import footnote_plugin
@@ -146,6 +145,52 @@ def render_fence(self, tokens, idx, options, env):
     # 普通代码块，使用 Pygments 高亮
     return highlight_code(code, lang)
 
+#==================================================
+# 自定义渲染时间
+#=================================================
+def time_tag_plugin(md):
+    # 更新正则：匹配 [time:YYYY-MM-DD HH:mm:ss] 这种持久化后的格式
+    # 如果你想同时兼容 [time] 和 [time:...]，可以使用这个正则：
+    import re
+    TIME_RE = re.compile(r'^\[time(?::(.*?))?\]')
+
+    def tokenize_time(state, silent):
+        content = state.src[state.pos:]
+        match = TIME_RE.match(content)
+        if not match:
+            return False
+
+        if not silent:
+            # 这里的 match.group(1) 就是冒号后面的时间字符串
+            # 如果是老格式 [time]，group(1) 会是 None
+            time_str = match.group(1) if match.group(1) else datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            token = state.push("time_tag", "", 0)
+            token.content = time_str
+
+        state.pos += len(match.group(0))
+        return True
+
+    md.inline.ruler.after("emphasis", "time_tag", tokenize_time)
+
+    def render_time(self, tokens, idx, options, env):
+        # 保持你之前调好的“醒目”样式
+        return f'<span class="time-node">🕒 {tokens[idx].content}</span>'
+
+    md.add_render_rule("time_tag", render_time)
+
+    def render_time(self, tokens, idx, options, env):
+        time_str = tokens[idx].content
+
+        # 美观的古朴大方样式
+        return f'''<span class="time-node">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align: middle; margin-right: 7px;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>{time_str}
+        </span>'''
+
+    md.add_render_rule("time_tag", render_time)
 
 # ============================================================
 # CSS 样式模板
@@ -181,7 +226,35 @@ def get_css_styles(dark_mode: bool = True) -> str:
     --code-header-bg: #2d333b;
     --shadow-color: rgba(0, 0, 0, 0.3);
 }
+/* 渲染时间节点 让时间节点看着更加的好看 */
+/* ====================== 古朴大方持久化时间节点 ====================== */
+.time-node {
+    display: inline-flex;
+    align-items: center;
+    background: #1f252e;
+    color: #d4b98a;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-family: 'Georgia', 'Times New Roman', 'Noto Serif SC', serif;
+    font-size: 0.98em;
+    font-weight: 500;
+    letter-spacing: 0.6px;
+    margin: 4px 8px;
+    border: 1px solid #445566;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.35), 0 3px 8px rgba(0,0,0,0.25);
+}
 
+.time-node svg {
+    width: 15px;
+    height: 15px;
+    margin-right: 8px;
+    stroke: #b89e6e;
+}
+
+.time-node:hover {
+    background: #252c38;
+    color: #e0c89a;
+}
 /* ===== 基础样式 ===== */
 html {
     scroll-behavior: smooth;
@@ -677,7 +750,18 @@ em {
     --code-header-bg: #f0ede8;
     --shadow-color: rgba(0, 0, 0, 0.04);
 }
-
+/* ====================== 古朴大方持久化时间节点 ====================== */
+.time-node {
+    background-color: #ff9800; /* 明亮的橙色，绝对醒目 */
+    color: #ffffff;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 12px;
+    margin-left: 5px;
+    display: inline-block;
+    border: 1px solid #e65100;
+}
 /* ===== 基础样式 ===== */
 html {
     scroll-behavior: smooth;
@@ -1589,6 +1673,7 @@ def render_markdown(md_text: str, dark_mode: bool = True) -> str:
     md_parser.use(front_matter_plugin)    # YAML 前言
     md_parser.use(footnote_plugin)        # 脚注
     md_parser.use(tasklists_plugin)       # 任务列表
+    md_parser.use(time_tag_plugin)        # <--- 新增这一行：启用时间标签插件
     
     # 自定义 fence 渲染规则
     md_parser.add_render_rule('fence', render_fence)

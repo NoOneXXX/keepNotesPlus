@@ -472,6 +472,7 @@ def setup_callout_plugin(md):
     """
     不需要额外安装插件，直接拦截原生 blockquote 的渲染
     支持 Obsidian 风格的 callout: > [!NOTE], > [!TIP], > [!WARNING], > [!IMPORTANT], > [!CAUTION]
+    所有 callout 都会平铺独立显示，不会嵌套包含
     """
 
     # Callout 类型到标题的映射
@@ -483,35 +484,187 @@ def setup_callout_plugin(md):
         'caution': 'Caution',
     }
 
-    def custom_blockquote_open(self, tokens, idx, options, env):
-        # 获取引用块内部的第一行内容
-        content = tokens[idx + 2].content if (idx + 2) < len(tokens) else ""
-
-        # 匹配 Obsidian 语法: > [!NOTE]
+    def extract_callouts_from_tokens(tokens):
+        """
+        提取所有 callout token，将嵌套的 callout 转换为平铺结构
+        返回处理后的 token 列表
+        """
         import re
-        match = re.match(r'^\[!(.*?)\]', content)
 
-        if match:
-            callout_type = match.group(1).lower()
-            # 标记这个 blockquote 是一个 callout，方便后面处理
-            tokens[idx].info = "is_callout"
-            tokens[idx].meta = {"callout_type": callout_type}
-            
-            # 获取标题，默认为类型名首字母大写
+        result = []
+        i = 0
+
+        while i < len(tokens):
+            token = tokens[i]
+
+            if token.type == "blockquote_open":
+                # 找到这个 blockquote 的范围和内容
+                start_idx = i
+                inline_idx = None
+                nesting_level = 1
+                j = i + 1
+
+                while j < len(tokens):
+                    t = tokens[j]
+                    if t.type == "blockquote_open":
+                        nesting_level += 1
+                    elif t.type == "blockquote_close":
+                        nesting_level -= 1
+                        if nesting_level == 0:
+                            break
+                    elif t.type == "inline" and inline_idx is None:
+                        inline_idx = j
+                    j += 1
+
+                end_idx = j
+
+                # 检查是否是 callout
+                is_callout = False
+                callout_type = None
+                if inline_idx is not None:
+                    content = tokens[inline_idx].content
+                    match = re.match(r'^\[!(.*?)\]', content)
+                    if match:
+                        is_callout = True
+                        callout_type = match.group(1).lower()
+                        # 移除 [!type] 标记
+                        new_content = re.sub(r'^\[!(.*?)\]\s*', '', content)
+                        tokens[inline_idx].content = new_content
+
+                if is_callout:
+                    # 标记为 callout
+                    token.info = "is_callout"
+                    if not hasattr(token, 'meta') or token.meta is None:
+                        token.meta = {}
+                    token.meta["callout_type"] = callout_type
+
+                    # 添加当前 callout 的 open token
+                    result.append(token)
+                    result.append(tokens[inline_idx])
+
+                    # 查找并处理嵌套的 callout
+                    # 从 inline 之后开始查找
+                    k = inline_idx + 1
+                    while k < end_idx:
+                        t = tokens[k]
+                        if t.type == "blockquote_open":
+                            # 找到嵌套 blockquote 的范围
+                            nested_start = k
+                            nested_inline_idx = None
+                            nested_level = 1
+                            m = k + 1
+
+                            while m < len(tokens):
+                                nt = tokens[m]
+                                if nt.type == "blockquote_open":
+                                    nested_level += 1
+                                elif nt.type == "blockquote_close":
+                                    nested_level -= 1
+                                    if nested_level == 0:
+                                        break
+                                elif nt.type == "inline" and nested_inline_idx is None:
+                                    nested_inline_idx = m
+                                m += 1
+
+                            nested_end = m
+
+                            # 检查嵌套的是否是 callout
+                            if nested_inline_idx is not None:
+                                nested_content = tokens[nested_inline_idx].content
+                                nested_match = re.match(r'^\[!(.*?)\]', nested_content)
+                                if nested_match:
+                                    # 是嵌套的 callout
+                                    # 先移除嵌套 callout 的 [!type] 标记
+                                    nested_new_content = re.sub(r'^\[!(.*?)\]\s*', '', nested_content)
+                                    tokens[nested_inline_idx].content = nested_new_content
+
+                                    # 先关闭当前 callout
+                                    close_token = tokens[end_idx]
+                                    close_token.info = "is_callout"
+                                    result.append(close_token)
+
+                                    # 递归处理嵌套的 callout
+                                    nested_tokens = tokens[nested_start:nested_end+1]
+                                    extracted = extract_callouts_from_tokens(nested_tokens)
+                                    result.extend(extracted)
+
+                                    # 重新开启一个新的 callout（如果需要）
+                                    # 实际上，嵌套 callout 后面的内容应该属于新的 callout
+                                    # 这里简化处理：每个 callout 独立
+                                    k = nested_end + 1
+                                    continue
+
+                        # 非 callout 的 token，直接添加
+                        if k < end_idx:
+                            result.append(t)
+                        k += 1
+
+                    # 添加当前 callout 的 close token
+                    close_token = tokens[end_idx]
+                    close_token.info = "is_callout"
+                    result.append(close_token)
+
+                    i = end_idx + 1
+                else:
+                    # 普通 blockquote，直接添加
+                    result.append(token)
+                    i += 1
+            else:
+                result.append(token)
+                i += 1
+
+        return result
+
+    def custom_blockquote_open(self, tokens, idx, options, env):
+        import re
+        token = tokens[idx]
+
+        if token.info == "is_callout":
+            callout_type = token.meta.get("callout_type", "note")
             title = CALLOUT_TITLES.get(callout_type, callout_type.capitalize())
-            
-            # 移除内容中的 [!type] 标记
-            content = re.sub(r'^\[!(.*?)\]\s*', '', content)
-            tokens[idx + 2].content = content
-            
-            return f'<div class="admonition callout {callout_type}" data-callout="{callout_type}"><div class="callout-title">{title}</div>'
+
+            # 找到并清理当前 callout 内所有 inline token 的 [!type] 标记
+            i = idx + 1
+            nesting_level = 1
+            while i < len(tokens):
+                t = tokens[i]
+                if t.type == "blockquote_open":
+                    nesting_level += 1
+                elif t.type == "blockquote_close":
+                    nesting_level -= 1
+                    if nesting_level == 0:
+                        break
+                elif t.type == "inline" and nesting_level == 1:
+                    # 清理当前 callout 直接包含的 inline token
+                    t.content = re.sub(r'^\[!(.*?)\]\s*', '', t.content)
+                    # 同时清理 children
+                    if hasattr(t, 'children') and t.children:
+                        for child in t.children:
+                            if hasattr(child, 'content') and child.content:
+                                child.content = re.sub(r'^\[!(.*?)\]\s*', '', child.content)
+                i += 1
+
+            return f'<div class="admonition callout {callout_type}" data-callout="{callout_type}"><div class="callout-title">{title}</div><div class="callout-content">'
 
         return '<blockquote>'
 
     def custom_blockquote_close(self, tokens, idx, options, env):
         if tokens[idx].info == "is_callout":
-            return '</div>'
+            return '</div></div>'
         return '</blockquote>'
+
+    # 在渲染前预处理所有 token
+    original_render = md.render
+
+    def patched_render(src, env=None):
+        # 先解析出 token 列表
+        tokens = md.parse(src, env)
+        # 提取 callout 并平铺化
+        tokens = extract_callouts_from_tokens(tokens)
+        # 渲染
+        return md.renderer.render(tokens, md.options, env or {})
+
+    md.render = patched_render
 
     # 覆盖原生的 blockquote 渲染规则
     md.add_render_rule("blockquote_open", custom_blockquote_open)

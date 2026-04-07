@@ -33,7 +33,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebChannel import QWebChannel
 
 from gui.func.utils import logger
-from gui.func.right_bottom_corner.markdown_renderer import render_markdown
+from gui.func.right_bottom_corner.MarkdownRenderer import render_markdown
 
 
 class CopyHandler(QObject):

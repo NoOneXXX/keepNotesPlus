@@ -17,6 +17,129 @@
     --shadow-color: rgba(0, 0, 0, 0.3);
 }
 
+/* ====================== Tasks 最佳样式 ====================== */
+
+/* 基础任务列表美化 */
+.task-list-item {
+    position: relative;
+    padding: 6px 8px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+    transition: all 0.2s ease;
+}
+
+.task-list-item:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+/* Checkbox 美化（圆角 + 彩色优先级） */
+.task-list-item input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    border: 2px solid var(--checkbox-border, #ccc);
+    transition: all 0.2s;
+}
+
+.task-list-item input[type="checkbox"]:checked {
+    background-color: #4ade80;
+    border-color: #4ade80;
+}
+
+/* 优先级颜色（取代表情符号） */
+.task-list-item[data-task-priority="highest"] input[type="checkbox"] {
+    border-color: #a855f7;
+    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.3);
+}
+
+.task-list-item[data-task-priority="high"] input[type="checkbox"] {
+    border-color: #ef4444;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+}
+
+.task-list-item[data-task-priority="medium"] input[type="checkbox"] {
+    border-color: #f59e0b;
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.3);
+}
+
+.task-list-item[data-task-priority="low"] input[type="checkbox"] {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.3);
+}
+
+/* 隐藏默认优先级表情 */
+span.task-priority {
+    display: none;
+}
+
+/* 日期样式 */
+.task-due {
+    font-size: 13px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    margin-left: 6px;
+    font-weight: 500;
+}
+
+/* 今日到期 */
+.task-due[data-task-due="today"] {
+    background: #67e8f9;
+    color: #164e63;
+}
+
+/* 逾期（红色警告） */
+.task-due[data-task-due^="past-"] {
+    background: #fda4af;
+    color: #9f1239;
+}
+
+/* 重复任务 */
+.task-recurring {
+    color: #888;
+    font-size: 13px;
+    font-style: italic;
+}
+
+/* 标签样式（灰色低调） */
+.tasks-list-text a.tag {
+    color: var(--text-muted, #888);
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* 任务描述文字 */
+.task-description {
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* 已完成任务淡化 */
+.task-list-item[data-task-status-type="DONE"] {
+    opacity: 0.65;
+    text-decoration: line-through;
+}
+
+/* 卡片式布局（类似你当前界面） */
+ul.contains-task-list,
+ul.plugin-tasks-query-result {
+    list-style: none;
+    padding: 0;
+}
+
+.task-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+/* 圆形 Checkbox 版本（可选） */
+ul > li.plugin-tasks-list-item .task-list-item-checkbox {
+    border-radius: 50%;
+}
+/**========tasks结束=========================================================================**
+
 /* ====================== Callout 提示框 ====================== */
 /* ====================== GitHub 风格 Callout 提示框 ====================== */
 .callout {

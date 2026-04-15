@@ -6,6 +6,7 @@ from gui.func.left.dropItemEvent import CustomTreeWidget
 from gui.func.left.file_encryption.encryption_data import FolderEncryptor
 from gui.func.left.file_encryption.EncryptPasswordDialog import EncryptPasswordDialog, EncryptSuccessDialog
 from gui.func.right_bottom_corner.RichTextEdit import RichTextEdit
+from gui.func.left.ColorPickerDialog import show_color_picker
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
     QTreeWidgetItem, QStyleFactory, QMessageBox, QHeaderView, QInputDialog, QFileDialog,
@@ -412,65 +413,79 @@ class XPNotebookTree(QWidget):
     右键点击事件的方法
     '''
     def on_context_menu(self, point):
+        from gui.func.left.TreeContextMenu import create_tree_context_menu
+        
         item = self.tree.itemAt(point)
         if item is None:
             return
-
+        
         # 获取节点信息
         item_path = item.data(0, Qt.UserRole)
         content_type = ""
         detail_info = None
-
+        
         if item_path:
             editor = JsonEditor()
             content_type = editor.read_notebook_if_dir(item_path)
             detail_info = editor.read_file_metadata_infos(item_path)
-
+        
         # 状态判断
         is_attachment = content_type and 'attachfile' in content_type
         is_trash_folder = detail_info and detail_info.get('title') == 'trash'
         is_in_trash = self._is_item_in_trash(item)
-
+        
         if "lock" not in content_type:
-            # 初始化自定义菜单
-            menu = ModernContextMenu(self)
-
-            # ====================== 公共方法：添加通用菜单 ======================
-            def add_common_actions():
-                """添加所有节点通用的右键菜单（打开、重命名、删除等）"""
-                menu.add_action("📂", "打开", lambda: self.open_item(item), "#3B82F6")
-                menu.add_action("✏", "重命名", lambda: self.rename_item(item), "#F59E0B")
-                menu.add_separator()
-                menu.add_action("📝", "创建 Markdown", lambda: self.create_markdown_file(item), "#6366F1")
-                menu.add_action("🧠", "创建思维导图", lambda: self.create_mindmap_file(item), "#9B59B6")
-                menu.add_action("📄", "创建子文件", lambda: self.create_file_item(item), "#10B981")
-                menu.add_action("📁", "创建文件夹", lambda: self.create_dir_action(item), "#8B5CF6")
-                menu.add_action("📎", "添加附件", lambda: self.adds_on_item(item), "#06B6D4")
-                menu.add_separator()
-                menu.add_action("🔐", "加密", lambda: self.encrypt_item(item), "#06B6D4")
-                menu.add_action("🗑", "删除", lambda: self.delete_item(item), "#EF4444")
-
-            # ====================== 根据类型显示菜单 ======================
-            if is_trash_folder:
-                # 回收站根目录：仅清空
-                menu.add_action("🗑", "清空回收站", lambda: self.empty_trash(item), "#EF4444")
-
-            elif is_in_trash:
-                # 回收站内部：永久删除 + 恢复
-                menu.add_action("☠", "永久删除", lambda: self.permanent_delete_item(item), "#DC2626")
-                menu.add_action("↩", "恢复文件", lambda: self.restore_item(item), "#10B981")
-
-            elif is_attachment:
-                # 附件：额外加“复制附件”，其他通用
-                menu.add_action("📋", "复制附件", lambda: self.copy_attachment(item), "#8B5CF6")
-                add_common_actions()
-
-            else:
-                # 普通文件/文件夹：全量通用菜单
-                add_common_actions()
-
+            # 使用封装的菜单创建函数
+            menu = create_tree_context_menu(
+                self, item, content_type, detail_info,
+                is_trash_folder, is_in_trash, is_attachment
+            )
             # 显示
             menu.show_menu(self.tree.viewport().mapToGlobal(point))
+
+    '''
+    设置节点字体颜色
+    '''
+    def set_item_font_color(self, item):
+        """设置树节点字体颜色"""
+        item_path = item.data(0, Qt.UserRole)
+        if not item_path:
+            show_toast(self, "无法获取节点路径", ToastWidget.ERROR)
+            return
+            
+        # 获取当前颜色
+        editor = JsonEditor()
+        detail_info = editor.read_file_metadata_infos(item_path)
+        current_color = ""
+        if detail_info:
+            current_color = detail_info.get('font_color', '')
+        if not current_color:
+            current_color = "#000000"
+            
+        # 显示颜色选择器
+        confirmed, selected_color, _ = show_color_picker(
+            parent=self,
+            current_color=current_color
+        )
+        
+        if confirmed:
+            try:
+                # 读取并更新 metadata
+                metadata = editor.read_node_infos(item_path)
+                if metadata and 'node' in metadata:
+                    if 'detail_info' not in metadata['node']:
+                        metadata['node']['detail_info'] = {}
+                    metadata['node']['detail_info']['font_color'] = selected_color
+                    
+                    # 写入文件
+                    meta_path = os.path.join(item_path, ".metadata.json")
+                    editor.writeByData(meta_path, metadata)
+                    
+                    # 更新树节点显示
+                    item.setForeground(0, QColor(selected_color))
+                    show_toast(self, "字体颜色已更新", ToastWidget.SUCCESS)
+            except Exception as e:
+                show_toast(self, f"保存颜色失败: {str(e)}", ToastWidget.ERROR)
 
     '''
     创建彩色图标
